@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using TaskPane.App.Services;
 using TaskPane.App.ViewModels;
@@ -24,6 +25,8 @@ public partial class OverlayWindow : Window
         _viewModel = viewModel;
         DataContext = viewModel;
         _viewModel.ConfirmParentCompletion = ConfirmParentCompletionAsync;
+        // Layered transparent host must stay fully opaque; content translucency is on RootSurface.
+        Opacity = 1;
 
         _elapsedTimer = new DispatcherTimer
         {
@@ -31,6 +34,27 @@ public partial class OverlayWindow : Window
         };
         _elapsedTimer.Tick += (_, _) => _viewModel.TickActiveElapsed();
         _elapsedTimer.Start();
+    }
+
+    private void OverlayWindow_OnLoaded(object sender, RoutedEventArgs e) => ApplyRootSurfaceClip();
+
+    private void RootSurface_OnSizeChanged(object sender, SizeChangedEventArgs e) => ApplyRootSurfaceClip();
+
+    private void ApplyRootSurfaceClip()
+    {
+        if (RootSurface.ActualWidth <= 0 || RootSurface.ActualHeight <= 0)
+        {
+            return;
+        }
+
+        var radius = TryFindResource("TpOverlayWindowRadius") is CornerRadius corner
+            ? corner.TopLeft
+            : 18;
+
+        RootSurface.Clip = new RectangleGeometry(
+            new Rect(0, 0, RootSurface.ActualWidth, RootSurface.ActualHeight),
+            radius,
+            radius);
     }
 
     public async Task InitializeAsync()

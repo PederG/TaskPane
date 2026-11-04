@@ -16,18 +16,39 @@
         MaxHeight="{Binding MaxContentHeight}"
         Width="340"
         Topmost="{Binding Topmost}"
-        Opacity="{Binding Opacity}"
         FontFamily="Segoe UI Variable Text, Segoe UI"
         AutomationProperties.Name="TaskPane overlay"
         KeyboardNavigation.TabNavigation="Cycle"
         LocationChanged="OverlayWindow_OnPlacementChanged"
-        SizeChanged="OverlayWindow_OnPlacementChanged">
+        SizeChanged="OverlayWindow_OnPlacementChanged"
+        Loaded="OverlayWindow_OnLoaded">
+  <!--
+    Opacity stays off the Window (must remain 1). Window.Opacity on an AllowsTransparency
+    host composites the full HWND rectangle and leaves a square ghost behind the rounded surface.
+    Translucency is applied on RootSurface only. Default Window template ResizeGrip is omitted
+    so the grip can sit inset inside the clipped rounded surface.
+  -->
+  <Window.Template>
+    <ControlTemplate TargetType="Window">
+      <!-- Transparent host only — no template ResizeGrip (that grip squares the HWND corner). -->
+      <Border Background="Transparent">
+        <AdornerDecorator>
+          <ContentPresenter />
+        </AdornerDecorator>
+      </Border>
+    </ControlTemplate>
+  </Window.Template>
 
-  <Border Background="{StaticResource TpOverlayBgBrush}"
+  <Border x:Name="RootSurface"
+          Background="{StaticResource TpOverlayBgBrush}"
           BorderBrush="{StaticResource TpOverlayBorderBrush}"
           BorderThickness="1"
           CornerRadius="{StaticResource TpOverlayWindowRadius}"
-          Padding="{StaticResource TpOverlayPadThickness}">
+          Padding="{StaticResource TpOverlayPadThickness}"
+          Opacity="{Binding Opacity}"
+          SnapsToDevicePixels="True"
+          SizeChanged="RootSurface_OnSizeChanged">
+    <Grid>
     <DockPanel LastChildFill="True">
 
       <!-- Header: drag + logo + wordmark + actions -->
@@ -551,5 +572,14 @@
         </ListBox.ItemTemplate>
       </ListBox>
     </DockPanel>
+
+      <!-- Inset inside rounded clip so the grip cannot square the outer corners -->
+      <ResizeGrip HorizontalAlignment="Right"
+                  VerticalAlignment="Bottom"
+                  Margin="0,0,2,2"
+                  Opacity="0.55"
+                  IsTabStop="False"
+                  AutomationProperties.Name="Resize overlay" />
+    </Grid>
   </Border>
 </Window>
