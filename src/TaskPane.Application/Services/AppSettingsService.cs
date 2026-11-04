@@ -81,7 +81,9 @@ public sealed class AppSettingsService
             settings.Theme = ThemePreference.System;
         }
 
-        var name = settings.ProductDisplayName?.Trim() ?? string.Empty;
-        settings.ProductDisplayName = string.IsNullOrWhiteSpace(name) ? "TaskPane" : name;
+        var name = settings.AppDisplayName?.Trim() ?? string.Empty;
+        settings.AppDisplayName = string.IsNullOrWhiteSpace(name)
+            ? TaskPane.Core.Branding.AppBranding.DefaultAppDisplayName
+            : name;
     }
 }

@@ -1,11 +1,11 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime">
 
   <!-- Compact overlay palette (charcoal / slate) matching approved mockup -->
   <Color x:Key="TpOverlayBgColor">#E61A1C23</Color>
   <Color x:Key="TpOverlayCardColor">#CC252830</Color>
+  <Color x:Key="TpOverlayActiveCardColor">#CC1E2A3A</Color>
   <Color x:Key="TpOverlayElevatedColor">#FF2A2D36</Color>
   <Color x:Key="TpOverlayPillColor">#FFC8D0DC</Color>
   <Color x:Key="TpOverlayTextColor">#FFF4F6FA</Color>
@@ -15,10 +15,16 @@
   <Color x:Key="TpOverlayDangerColor">#FFFF8A80</Color>
   <Color x:Key="TpOverlayCautionColor">#FFFFD180</Color>
   <Color x:Key="TpOverlayRowHoverColor">#14FFFFFF</Color>
+  <Color x:Key="TpOverlayRowActiveColor">#1A3A5A78</Color>
   <Color x:Key="TpOverlayCheckboxColor">#FF6B7380</Color>
+  <Color x:Key="TpOverlayIconHoverColor">#28A8B4C8</Color>
+  <Color x:Key="TpOverlayIconPressedColor">#33101820</Color>
+  <Color x:Key="TpOverlayCompleteHoverColor">#334FC3F7</Color>
+  <Color x:Key="TpOverlayFocusRingColor">#998EB7E0</Color>
 
   <SolidColorBrush x:Key="TpOverlayBgBrush" Color="{StaticResource TpOverlayBgColor}" />
   <SolidColorBrush x:Key="TpOverlayCardBrush" Color="{StaticResource TpOverlayCardColor}" />
+  <SolidColorBrush x:Key="TpOverlayActiveCardBrush" Color="{StaticResource TpOverlayActiveCardColor}" />
   <SolidColorBrush x:Key="TpOverlayElevatedBrush" Color="{StaticResource TpOverlayElevatedColor}" />
   <SolidColorBrush x:Key="TpOverlayPillBrush" Color="{StaticResource TpOverlayPillColor}" />
   <SolidColorBrush x:Key="TpOverlayTextBrush" Color="{StaticResource TpOverlayTextColor}" />
@@ -28,7 +34,12 @@
   <SolidColorBrush x:Key="TpOverlayDangerBrush" Color="{StaticResource TpOverlayDangerColor}" />
   <SolidColorBrush x:Key="TpOverlayCautionBrush" Color="{StaticResource TpOverlayCautionColor}" />
   <SolidColorBrush x:Key="TpOverlayRowHoverBrush" Color="{StaticResource TpOverlayRowHoverColor}" />
+  <SolidColorBrush x:Key="TpOverlayRowActiveBrush" Color="{StaticResource TpOverlayRowActiveColor}" />
   <SolidColorBrush x:Key="TpOverlayCheckboxBrush" Color="{StaticResource TpOverlayCheckboxColor}" />
+  <SolidColorBrush x:Key="TpOverlayIconHoverBrush" Color="{StaticResource TpOverlayIconHoverColor}" />
+  <SolidColorBrush x:Key="TpOverlayIconPressedBrush" Color="{StaticResource TpOverlayIconPressedColor}" />
+  <SolidColorBrush x:Key="TpOverlayCompleteHoverBrush" Color="{StaticResource TpOverlayCompleteHoverColor}" />
+  <SolidColorBrush x:Key="TpOverlayFocusRingBrush" Color="{StaticResource TpOverlayFocusRingColor}" />
 
   <CornerRadius x:Key="TpOverlayWindowRadius">18</CornerRadius>
   <CornerRadius x:Key="TpOverlayCardRadius">12</CornerRadius>
@@ -39,20 +50,249 @@
   <Thickness x:Key="TpOverlayPadThickness">14</Thickness>
   <Thickness x:Key="TpOverlaySectionGap">0,0,0,10</Thickness>
 
-  <Style x:Key="TpOverlayIconButton" TargetType="ui:Button">
+  <!-- Keyboard focus ring (no default WPF focus rectangle / white chrome) -->
+  <Style x:Key="TpOverlayFocusVisual">
+    <Setter Property="Control.Template">
+      <Setter.Value>
+        <ControlTemplate>
+          <Rectangle Margin="0"
+                     SnapsToDevicePixels="True"
+                     Stroke="{StaticResource TpOverlayFocusRingBrush}"
+                     StrokeThickness="1.5"
+                     RadiusX="7"
+                     RadiusY="7" />
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
+    Reusable Fluent-style icon button:
+    normal = transparent + muted icon; hover = lighter slate rounded;
+    pressed = slightly darker; no default WPF chrome / border / focus rect.
+  -->
+  <Style x:Key="TpOverlayIconButton" TargetType="Button">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
     <Setter Property="Padding" Value="4" />
     <Setter Property="MinWidth" Value="28" />
     <Setter Property="MinHeight" Value="28" />
     <Setter Property="Width" Value="28" />
     <Setter Property="Height" Value="28" />
-    <Setter Property="Appearance" Value="Transparent" />
     <Setter Property="Foreground" Value="{StaticResource TpOverlayMutedBrush}" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="FocusVisualStyle" Value="{StaticResource TpOverlayFocusVisual}" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="OverridesDefaultStyle" Value="True" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Bd"
+                  Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="{StaticResource TpOverlayControlRadius}"
+                  SnapsToDevicePixels="True">
+            <ContentPresenter HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              RecognizesAccessKey="True"
+                              TextElement.Foreground="{TemplateBinding Foreground}" />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background" Value="{StaticResource TpOverlayIconHoverBrush}" />
+              <Setter Property="Foreground" Value="{StaticResource TpOverlayTextBrush}" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="Bd" Property="Background" Value="{StaticResource TpOverlayIconPressedBrush}" />
+              <Setter Property="Foreground" Value="{StaticResource TpOverlayTextBrush}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.45" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
   </Style>
 
-  <Style x:Key="TpOverlayGhostButton" TargetType="ui:Button" BasedOn="{StaticResource TpOverlayIconButton}">
+  <Style x:Key="TpOverlayGhostButton" TargetType="Button" BasedOn="{StaticResource TpOverlayIconButton}">
     <Setter Property="Width" Value="Auto" />
+    <Setter Property="Height" Value="Auto" />
     <Setter Property="MinWidth" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
     <Setter Property="Padding" Value="6,2" />
+  </Style>
+
+  <!-- Completion: hollow circle / filled check; soft blue hover -->
+  <Style x:Key="TpOverlayCompleteButton" TargetType="Button" BasedOn="{StaticResource TpOverlayIconButton}">
+    <Setter Property="Width" Value="22" />
+    <Setter Property="Height" Value="22" />
+    <Setter Property="MinWidth" Value="22" />
+    <Setter Property="MinHeight" Value="22" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Bd"
+                  Background="Transparent"
+                  CornerRadius="11"
+                  SnapsToDevicePixels="True">
+            <ContentPresenter HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              TextElement.Foreground="{TemplateBinding Foreground}" />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background" Value="{StaticResource TpOverlayCompleteHoverBrush}" />
+              <Setter Property="Foreground" Value="{StaticResource TpOverlayTextBrush}" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="Bd" Property="Background" Value="{StaticResource TpOverlayIconPressedBrush}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.45" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Footer / text links: transparent, no chrome -->
+  <Style x:Key="TpOverlayLinkButton" TargetType="Button" BasedOn="{StaticResource TpOverlayGhostButton}">
+    <Setter Property="Foreground" Value="{StaticResource TpOverlayMetaBrush}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Padding" Value="2,1" />
+  </Style>
+
+  <!-- Compact focus ComboBox styled as the selected pill -->
+  <Style x:Key="TpOverlayFocusCombo" TargetType="ComboBox">
+    <Setter Property="Foreground" Value="#FF1A1C23" />
+    <Setter Property="Background" Value="{StaticResource TpOverlayPillBrush}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="10,3,6,3" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="MinHeight" Value="24" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="FocusVisualStyle" Value="{StaticResource TpOverlayFocusVisual}" />
+    <Setter Property="OverridesDefaultStyle" Value="True" />
+    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+    <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ComboBox">
+          <Grid>
+            <ToggleButton x:Name="ToggleButton"
+                          Focusable="False"
+                          ClickMode="Press"
+                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+              <ToggleButton.Template>
+                <ControlTemplate TargetType="ToggleButton">
+                  <Border x:Name="Pill"
+                          Background="{StaticResource TpOverlayPillBrush}"
+                          CornerRadius="{StaticResource TpOverlayPillRadius}"
+                          Padding="10,3,8,3"
+                          SnapsToDevicePixels="True">
+                    <DockPanel LastChildFill="True">
+                      <Path DockPanel.Dock="Right"
+                            Data="M0,0 L4,4 L8,0"
+                            Stroke="#FF1A1C23"
+                            StrokeThickness="1.4"
+                            StrokeStartLineCap="Round"
+                            StrokeEndLineCap="Round"
+                            StrokeLineJoin="Round"
+                            Width="8"
+                            Height="5"
+                            Margin="6,1,0,0"
+                            VerticalAlignment="Center"
+                            Stretch="None" />
+                      <ContentPresenter VerticalAlignment="Center"
+                                        HorizontalAlignment="Left"
+                                        RecognizesAccessKey="True" />
+                    </DockPanel>
+                  </Border>
+                  <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                      <Setter TargetName="Pill" Property="Background" Value="#FFD5DCE6" />
+                    </Trigger>
+                    <Trigger Property="IsChecked" Value="True">
+                      <Setter TargetName="Pill" Property="Background" Value="#FFE0E6EE" />
+                    </Trigger>
+                  </ControlTemplate.Triggers>
+                </ControlTemplate>
+              </ToggleButton.Template>
+              <!-- Selection shown via ToggleButton ContentPresenter above -->
+              <ContentPresenter Content="{TemplateBinding SelectionBoxItem}"
+                                ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Left"
+                                IsHitTestVisible="False" />
+            </ToggleButton>
+            <Popup x:Name="Popup"
+                   Placement="Bottom"
+                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                   AllowsTransparency="True"
+                   Focusable="False"
+                   PopupAnimation="Fade">
+              <Border x:Name="DropDown"
+                      MinWidth="{TemplateBinding ActualWidth}"
+                      MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                      Background="{StaticResource TpOverlayElevatedBrush}"
+                      BorderBrush="{StaticResource TpOverlayBorderBrush}"
+                      BorderThickness="1"
+                      CornerRadius="{StaticResource TpOverlayControlRadius}"
+                      Margin="0,4,0,0"
+                      Padding="4">
+                <ScrollViewer Margin="0" SnapsToDevicePixels="True">
+                  <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained" />
+                </ScrollViewer>
+              </Border>
+            </Popup>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.5" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+    <Setter Property="ItemContainerStyle">
+      <Setter.Value>
+        <Style TargetType="ComboBoxItem">
+          <Setter Property="Foreground" Value="{StaticResource TpOverlayTextBrush}" />
+          <Setter Property="Padding" Value="10,6" />
+          <Setter Property="Cursor" Value="Hand" />
+          <Setter Property="FocusVisualStyle" Value="{StaticResource TpOverlayFocusVisual}" />
+          <Setter Property="Template">
+            <Setter.Value>
+              <ControlTemplate TargetType="ComboBoxItem">
+                <Border x:Name="ItemBd"
+                        Background="Transparent"
+                        CornerRadius="6"
+                        Padding="{TemplateBinding Padding}"
+                        SnapsToDevicePixels="True">
+                  <ContentPresenter />
+                </Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsHighlighted" Value="True">
+                    <Setter TargetName="ItemBd" Property="Background" Value="{StaticResource TpOverlayIconHoverBrush}" />
+                  </Trigger>
+                  <Trigger Property="IsSelected" Value="True">
+                    <Setter TargetName="ItemBd" Property="Background" Value="{StaticResource TpOverlayRowActiveBrush}" />
+                    <Setter Property="FontWeight" Value="SemiBold" />
+                  </Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Setter.Value>
+          </Setter>
+        </Style>
+      </Setter.Value>
+    </Setter>
   </Style>
 
   <Style x:Key="TpOverlayWordmark" TargetType="TextBlock">
@@ -106,6 +346,9 @@
             <Trigger Property="IsMouseOver" Value="True">
               <Setter TargetName="RowBd" Property="Background" Value="{StaticResource TpOverlayRowHoverBrush}" />
             </Trigger>
+            <DataTrigger Binding="{Binding IsTimerRunning}" Value="True">
+              <Setter TargetName="RowBd" Property="Background" Value="{StaticResource TpOverlayRowActiveBrush}" />
+            </DataTrigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>

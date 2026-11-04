@@ -66,7 +66,27 @@ Copy the output folder to a user-writable location and run `TaskPane.exe`. **No 
 - Opt-in per-user autostart (HKCU Run), theme preference, text scale, privacy-filtered file logs.
 - Crash/unclean-exit recovery notice; LocalAppData writability probe.
 - Multi-monitor placement restore when a saved monitor disappears.
-- Public repository name remains `TaskPane` pending any later branding decision.
+- Public repository name / wordmark remains **TaskPane**. Workplace builds can show a different name without committing it here (see Branding below).
+
+## Branding (`AppDisplayName`)
+
+The overlay wordmark is driven by `AppSettings.AppDisplayName`, which defaults to the compile-time `AppBranding.DefaultAppDisplayName` (**TaskPane** in this repo).
+
+| Layer | How | Notes |
+| --- | --- | --- |
+| Public default | Committed `AppDisplayName=TaskPane` | Do not change the public default to a private workplace name. |
+| Build-time override | `dotnet build -p:AppDisplayName=YourName` or gitignored `Directory.Build.local.props` | Rewrites the generated `AppBranding` constant for that build. |
+| Runtime override | Persist `appDisplayName` in local app settings (SQLite) | Survives restarts for that Windows profile; no secrets belong in the repo. |
+
+Example workplace-only props file (gitignored as `Directory.Build.local.props`):
+
+```xml
+<Project>
+  <PropertyGroup>
+    <AppDisplayName>YourWorkplaceName</AppDisplayName>
+  </PropertyGroup>
+</Project>
+```
 
 ## Explicitly out of scope for v1
 

@@ -118,25 +118,6 @@ public partial class OverlayWindow : Window
         MoreButton.ContextMenu.IsOpen = true;
     }
 
-    private void FocusPill_OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is FrameworkElement { ContextMenu: { } menu } element)
-        {
-            menu.PlacementTarget = element;
-            menu.IsOpen = true;
-            e.Handled = true;
-        }
-    }
-
-    private void FocusMenuItem_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is WpfMenuItem { Tag: FocusBucket bucket }
-            && _viewModel.SelectFocusCommand.CanExecute(bucket))
-        {
-            _viewModel.SelectFocusCommand.Execute(bucket);
-        }
-    }
-
     private void TaskRowMenu_OnClick(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { ContextMenu: { } menu } element)

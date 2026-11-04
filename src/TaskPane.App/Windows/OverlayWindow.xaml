@@ -70,25 +70,25 @@
           </StackPanel>
 
           <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-            <ui:Button Style="{StaticResource TpOverlayIconButton}"
-                       ToolTip="Search tasks"
-                       Command="{Binding ToggleSearchCommand}"
-                       AutomationProperties.Name="Search tasks">
+            <Button Style="{StaticResource TpOverlayIconButton}"
+                    ToolTip="Search tasks"
+                    Command="{Binding ToggleSearchCommand}"
+                    AutomationProperties.Name="Search tasks">
               <ui:SymbolIcon Symbol="Search24" FontSize="14" />
-            </ui:Button>
-            <ui:Button Style="{StaticResource TpOverlayIconButton}"
-                       ToolTip="Open manager"
-                       Command="{Binding OpenManagerCommand}"
-                       AutomationProperties.Name="Open manager">
+            </Button>
+            <Button Style="{StaticResource TpOverlayIconButton}"
+                    ToolTip="Open manager"
+                    Command="{Binding OpenManagerCommand}"
+                    AutomationProperties.Name="Open manager">
               <ui:SymbolIcon Symbol="ArrowMaximize24" FontSize="14" />
-            </ui:Button>
-            <ui:Button x:Name="MoreButton"
-                       Style="{StaticResource TpOverlayIconButton}"
-                       ToolTip="More"
-                       Click="MoreButton_OnClick"
-                       AutomationProperties.Name="More options">
+            </Button>
+            <Button x:Name="MoreButton"
+                    Style="{StaticResource TpOverlayIconButton}"
+                    ToolTip="More"
+                    Click="MoreButton_OnClick"
+                    AutomationProperties.Name="More options">
               <ui:SymbolIcon Symbol="MoreHorizontal24" FontSize="14" />
-              <ui:Button.ContextMenu>
+              <Button.ContextMenu>
                 <ContextMenu x:Name="MoreMenu">
                   <MenuItem Header="Hide blocked"
                             IsCheckable="True"
@@ -104,35 +104,24 @@
                   <MenuItem Header="Quit"
                             Command="{Binding QuitCommand}" />
                 </ContextMenu>
-              </ui:Button.ContextMenu>
-            </ui:Button>
+              </Button.ContextMenu>
+            </Button>
           </StackPanel>
         </Grid>
       </Border>
 
-      <!-- Focus meta row -->
+      <!-- Focus meta row: compact pill ComboBox with clear selected state -->
       <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10" LastChildFill="False">
-        <Border Background="{StaticResource TpOverlayPillBrush}"
-                CornerRadius="{StaticResource TpOverlayPillRadius}"
-                Padding="10,3"
-                Cursor="Hand"
-                MouseLeftButtonUp="FocusPill_OnMouseLeftButtonUp"
-                DockPanel.Dock="Left"
-                VerticalAlignment="Center">
-          <Border.ContextMenu>
-            <ContextMenu x:Name="FocusMenu">
-              <MenuItem Header="Inbox" Click="FocusMenuItem_OnClick" Tag="{x:Static enums:FocusBucket.Inbox}" />
-              <MenuItem Header="Today" Click="FocusMenuItem_OnClick" Tag="{x:Static enums:FocusBucket.Today}" />
-              <MenuItem Header="Next" Click="FocusMenuItem_OnClick" Tag="{x:Static enums:FocusBucket.Next}" />
-              <MenuItem Header="Someday" Click="FocusMenuItem_OnClick" Tag="{x:Static enums:FocusBucket.Someday}" />
-            </ContextMenu>
-          </Border.ContextMenu>
-          <TextBlock Text="{Binding FocusLabel}"
-                     FontSize="12"
-                     FontWeight="SemiBold"
-                     Foreground="#FF1A1C23"
-                     VerticalAlignment="Center" />
-        </Border>
+        <ComboBox DockPanel.Dock="Left"
+                  Style="{StaticResource TpOverlayFocusCombo}"
+                  SelectedItem="{Binding SelectedFocus}"
+                  VerticalAlignment="Center"
+                  AutomationProperties.Name="Focus bucket">
+          <enums:FocusBucket>Inbox</enums:FocusBucket>
+          <enums:FocusBucket>Today</enums:FocusBucket>
+          <enums:FocusBucket>Next</enums:FocusBucket>
+          <enums:FocusBucket>Someday</enums:FocusBucket>
+        </ComboBox>
 
         <TextBlock Text="{Binding TaskCountLabel}"
                    Style="{StaticResource TpOverlayMetaText}"
@@ -180,22 +169,19 @@
 
       <!-- Footer -->
       <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0" LastChildFill="False">
-        <ui:Button Appearance="Transparent"
-                   Padding="0"
-                   HorizontalAlignment="Left"
-                   Foreground="{StaticResource TpOverlayMetaBrush}"
-                   Command="{Binding ToggleSleepingListCommand}"
-                   AutomationProperties.Name="Sleeping and completed counts">
+        <Button Style="{StaticResource TpOverlayLinkButton}"
+                Command="{Binding ToggleSleepingListCommand}"
+                AutomationProperties.Name="Sleeping and completed counts">
           <TextBlock Text="{Binding FooterCountsLabel}"
                      Style="{StaticResource TpOverlayFooterText}" />
-        </ui:Button>
+        </Button>
 
-        <ui:Button DockPanel.Dock="Right"
-                   Appearance="Transparent"
-                   Padding="4,0"
-                   HorizontalAlignment="Right"
-                   Command="{Binding OpenManagerCommand}"
-                   AutomationProperties.Name="Open manager from footer">
+        <Button DockPanel.Dock="Right"
+                Style="{StaticResource TpOverlayLinkButton}"
+                HorizontalAlignment="Right"
+                Padding="4,0"
+                Command="{Binding OpenManagerCommand}"
+                AutomationProperties.Name="Open manager from footer">
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="Open manager"
                        FontSize="12"
@@ -207,7 +193,7 @@
                            Margin="4,0,0,0"
                            VerticalAlignment="Center" />
           </StackPanel>
-        </ui:Button>
+        </Button>
       </DockPanel>
 
       <!-- Status (ephemeral) -->
@@ -246,12 +232,12 @@
         <ListBox.ItemTemplate>
           <DataTemplate>
             <DockPanel>
-              <ui:Button DockPanel.Dock="Right"
-                         Content="Wake"
-                         Appearance="Secondary"
-                         Padding="8,2"
-                         Command="{Binding DataContext.WakeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                         CommandParameter="{Binding}" />
+              <Button DockPanel.Dock="Right"
+                      Style="{StaticResource TpOverlayGhostButton}"
+                      Content="Wake"
+                      Padding="8,2"
+                      Command="{Binding DataContext.WakeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                      CommandParameter="{Binding}" />
               <TextBlock Text="{Binding Title}"
                          Foreground="{StaticResource TpOverlayMutedBrush}"
                          TextTrimming="CharacterEllipsis"
@@ -347,11 +333,11 @@
               Margin="0,0,0,8"
               Visibility="{Binding NotePopoverOpen, Converter={StaticResource BoolToVis}}">
         <DockPanel>
-          <ui:Button DockPanel.Dock="Right"
-                     Content="Close"
-                     Appearance="Secondary"
-                     Padding="8,4"
-                     Command="{Binding CloseNotesCommand}" />
+          <Button DockPanel.Dock="Right"
+                  Style="{StaticResource TpOverlayGhostButton}"
+                  Content="Close"
+                  Padding="8,4"
+                  Command="{Binding CloseNotesCommand}" />
           <StackPanel>
             <TextBlock Text="Notes preview"
                        Foreground="{StaticResource TpOverlayMetaBrush}"
@@ -369,9 +355,9 @@
         </DockPanel>
       </Border>
 
-      <!-- Active task card -->
+      <!-- Active task card (only while a timer is running; no duplicate elapsed elsewhere) -->
       <Border DockPanel.Dock="Top"
-              Background="{StaticResource TpOverlayCardBrush}"
+              Background="{StaticResource TpOverlayActiveCardBrush}"
               CornerRadius="{StaticResource TpOverlayCardRadius}"
               Padding="12,10"
               Margin="0,0,0,10"
@@ -400,27 +386,19 @@
                        FontSize="12"
                        Foreground="{StaticResource TpOverlayMutedBrush}" />
           </StackPanel>
-          <Border Grid.Column="1"
+          <Button Grid.Column="1"
+                  Style="{StaticResource TpOverlayIconButton}"
                   Width="36"
                   Height="36"
-                  CornerRadius="18"
-                  BorderBrush="{StaticResource TpOverlayBorderBrush}"
-                  BorderThickness="1"
-                  Background="Transparent"
+                  Margin="10,0,0,0"
                   VerticalAlignment="Center"
-                  Margin="10,0,0,0">
-            <ui:Button Width="34"
-                       Height="34"
-                       Padding="0"
-                       Appearance="Transparent"
-                       Command="{Binding PauseActiveCommand}"
-                       ToolTip="Pause timer"
-                       AutomationProperties.Name="Pause active timer">
-              <ui:SymbolIcon Symbol="Pause24"
-                             FontSize="14"
-                             Foreground="{StaticResource TpOverlayTextBrush}" />
-            </ui:Button>
-          </Border>
+                  Command="{Binding PauseActiveCommand}"
+                  ToolTip="Pause timer"
+                  AutomationProperties.Name="Pause active timer">
+            <ui:SymbolIcon Symbol="Pause24"
+                           FontSize="14"
+                           Foreground="{StaticResource TpOverlayTextBrush}" />
+          </Button>
         </Grid>
       </Border>
 
@@ -446,15 +424,12 @@
                 <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
 
-              <ui:Button Grid.Column="0"
-                         Width="22"
-                         Height="22"
-                         Padding="0"
-                         Appearance="Transparent"
-                         VerticalAlignment="Center"
-                         Command="{Binding DataContext.ToggleCompleteCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                         CommandParameter="{Binding}"
-                         AutomationProperties.Name="Complete task">
+              <Button Grid.Column="0"
+                      Style="{StaticResource TpOverlayCompleteButton}"
+                      VerticalAlignment="Center"
+                      Command="{Binding DataContext.ToggleCompleteCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                      CommandParameter="{Binding}"
+                      AutomationProperties.Name="Complete task">
                 <Grid>
                   <ui:SymbolIcon Symbol="Circle24"
                                  FontSize="16"
@@ -472,7 +447,7 @@
                   </ui:SymbolIcon>
                   <ui:SymbolIcon Symbol="CheckmarkCircle24"
                                  FontSize="16"
-                                 Foreground="{StaticResource TpOverlayMutedBrush}">
+                                 Foreground="#FF8EB7E0">
                     <ui:SymbolIcon.Style>
                       <Style TargetType="ui:SymbolIcon">
                         <Setter Property="Visibility" Value="Collapsed" />
@@ -485,7 +460,7 @@
                     </ui:SymbolIcon.Style>
                   </ui:SymbolIcon>
                 </Grid>
-              </ui:Button>
+              </Button>
 
               <TextBlock Grid.Column="1"
                          Text="{Binding Title}"
@@ -513,13 +488,13 @@
                 </TextBlock.Style>
               </TextBlock>
 
-              <!-- Play / active pulse -->
-              <ui:Button Grid.Column="2"
-                         Style="{StaticResource TpOverlayIconButton}"
-                         Command="{Binding DataContext.ToggleTimerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                         CommandParameter="{Binding}"
-                         ToolTip="Start, switch, or stop timer"
-                         AutomationProperties.Name="Toggle timer">
+              <!-- Play / active pulse (elapsed lives on the active card only) -->
+              <Button Grid.Column="2"
+                      Style="{StaticResource TpOverlayIconButton}"
+                      Command="{Binding DataContext.ToggleTimerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                      CommandParameter="{Binding}"
+                      ToolTip="Start, switch, or stop timer"
+                      AutomationProperties.Name="Toggle timer">
                 <Grid>
                   <ui:SymbolIcon Symbol="PlayCircle24" FontSize="16">
                     <ui:SymbolIcon.Style>
@@ -546,16 +521,16 @@
                     </ui:SymbolIcon.Style>
                   </ui:SymbolIcon>
                 </Grid>
-              </ui:Button>
+              </Button>
 
-              <!-- Row overflow: sleep / subtask / expand / delete / notes -->
-              <ui:Button Grid.Column="3"
-                         Style="{StaticResource TpOverlayIconButton}"
-                         Click="TaskRowMenu_OnClick"
-                         ToolTip="Task actions"
-                         AutomationProperties.Name="Task actions">
+              <!-- Row overflow: sleep / subtask / expand / delete / notes (soft-delete) -->
+              <Button Grid.Column="3"
+                      Style="{StaticResource TpOverlayIconButton}"
+                      Click="TaskRowMenu_OnClick"
+                      ToolTip="Task actions"
+                      AutomationProperties.Name="Task actions">
                 <ui:SymbolIcon Symbol="MoreHorizontal24" FontSize="14" />
-                <ui:Button.ContextMenu>
+                <Button.ContextMenu>
                   <ContextMenu>
                     <MenuItem Header="Sleep 1 hour"
                               Click="TaskMenuSleep_OnClick" />
@@ -569,8 +544,8 @@
                     <MenuItem Header="Delete"
                               Click="TaskMenuDelete_OnClick" />
                   </ContextMenu>
-                </ui:Button.ContextMenu>
-              </ui:Button>
+                </Button.ContextMenu>
+              </Button>
             </Grid>
           </DataTemplate>
         </ListBox.ItemTemplate>
