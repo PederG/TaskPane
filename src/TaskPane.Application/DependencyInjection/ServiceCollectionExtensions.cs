@@ -19,6 +19,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<TransferService>();
         services.AddSingleton<TaskService>();
         services.AddSingleton<OverlaySettingsService>();
+        services.AddSingleton<AppSettingsService>();
         return services;
     }
 }

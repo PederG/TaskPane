@@ -12,6 +12,18 @@
     <Product>TaskPane</Product>
     <AssemblyTitle>TaskPane</AssemblyTitle>
     <Description>Offline-first Windows task overlay</Description>
+    <Version>0.7.0</Version>
+    <InformationalVersion>0.7.0-phase7</InformationalVersion>
+    <Company>TaskPane</Company>
+    <Copyright>Copyright (c) TaskPane contributors</Copyright>
+  </PropertyGroup>
+
+  <!-- Applied only when publishing a self-contained win-x64 folder build. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishSingleFile>false</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <SelfContained>true</SelfContained>
   </PropertyGroup>
 
   <ItemGroup>

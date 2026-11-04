@@ -1,8 +1,10 @@
 using System.Windows;
 using System.Windows.Input;
+using TaskPane.App.Services;
 using TaskPane.App.ViewModels;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
+using TaskPane.Core.Placement;
 
 namespace TaskPane.App.Windows;
 
@@ -120,36 +122,29 @@ public partial class OverlayWindow : Window
 
     private void EnsureOnScreen()
     {
-        var workArea = SystemParameters.WorkArea;
-        if (Width < MinWidth)
-        {
-            Width = MinWidth;
-        }
+        var workAreas = MonitorWorkAreaProbe.GetWorkAreas();
+        var deviceNames = MonitorWorkAreaProbe.GetDeviceNames();
+        var current = new WindowPlacementCalculator.Rect(Left, Top, Width, Height);
+        var preferredIndex = WindowPlacementCalculator.FindPreferredWorkAreaIndex(
+            current,
+            workAreas,
+            _viewModel.Placement.MonitorDeviceName,
+            deviceNames);
 
-        if (Height < MinHeight)
-        {
-            Height = MinHeight;
-        }
+        var restored = WindowPlacementCalculator.EnsureVisible(
+            current,
+            workAreas,
+            MinWidth,
+            MinHeight,
+            MaxWidth > 0 ? MaxWidth : 900,
+            MaxHeight > 0 ? MaxHeight : 1200,
+            edgeMargin: 40,
+            preferredWorkAreaIndex: preferredIndex);
 
-        if (Left + Width < workArea.Left + 40)
-        {
-            Left = workArea.Left + 40;
-        }
-
-        if (Top + Height < workArea.Top + 40)
-        {
-            Top = workArea.Top + 40;
-        }
-
-        if (Left > workArea.Right - 40)
-        {
-            Left = workArea.Right - Width - 40;
-        }
-
-        if (Top > workArea.Bottom - 40)
-        {
-            Top = workArea.Bottom - Height - 40;
-        }
+        Left = restored.Left;
+        Top = restored.Top;
+        Width = restored.Width;
+        Height = restored.Height;
     }
 
     private static string? GetMonitorName()
