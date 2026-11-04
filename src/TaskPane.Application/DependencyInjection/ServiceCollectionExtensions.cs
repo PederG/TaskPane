@@ -15,6 +15,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<DependencyService>();
         services.AddSingleton<RecurrenceService>();
         services.AddSingleton<ReminderService>();
+        services.AddSingleton<BackupService>();
+        services.AddSingleton<TransferService>();
         services.AddSingleton<TaskService>();
         services.AddSingleton<OverlaySettingsService>();
         return services;

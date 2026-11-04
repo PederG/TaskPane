@@ -13,7 +13,8 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddTaskPaneInfrastructure(
         this IServiceCollection services,
-        string? databasePath = null)
+        string? databasePath = null,
+        IDocumentsFolderResolver? documentsFolderResolver = null)
     {
         var path = databasePath ?? AppPaths.GetDatabasePath();
         services.AddSingleton(new SqliteConnectionFactory(path));
@@ -22,6 +23,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMigration, Migration003_Phase3TimeTracking>();
         services.AddSingleton<IMigration, Migration004_Phase4DependenciesHistory>();
         services.AddSingleton<IMigration, Migration005_Phase5RecurrenceReminders>();
+        services.AddSingleton<IMigration, Migration006_Phase6BackupTransfer>();
         services.AddSingleton<SqliteMigrator>();
         services.AddSingleton<SqliteUnitOfWork>();
         services.AddSingleton<IUnitOfWork>(sp => sp.GetRequiredService<SqliteUnitOfWork>());
@@ -34,6 +36,17 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAuditRepository, SqliteAuditRepository>();
         services.AddSingleton<IRecurrenceTemplateRepository, SqliteRecurrenceTemplateRepository>();
         services.AddSingleton<IReminderRepository, SqliteReminderRepository>();
+        services.AddSingleton<IBackupHistoryRepository, SqliteBackupHistoryRepository>();
+        services.AddSingleton<IDatabaseBackupRunner, SqliteDatabaseBackupRunner>();
+        if (documentsFolderResolver is null)
+        {
+            services.TryAddSingleton<IDocumentsFolderResolver, DocumentsFolderResolver>();
+        }
+        else
+        {
+            services.AddSingleton(documentsFolderResolver);
+        }
+
         services.AddSingleton<IClock, SystemClock>();
         services.TryAddSingleton<IWorkstationActivityMonitor, NullWorkstationActivityMonitor>();
         services.TryAddSingleton<INotificationPresenter, NullNotificationPresenter>();

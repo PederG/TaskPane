@@ -13,6 +13,8 @@ public interface IReminderRepository
 
     Task<IReadOnlyList<Reminder>> ListDueAsync(DateTimeOffset utcNow, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<Reminder>> ListAllAsync(CancellationToken cancellationToken = default);
+
     Task InsertAsync(Reminder reminder, CancellationToken cancellationToken = default);
 
     Task UpdateAsync(Reminder reminder, CancellationToken cancellationToken = default);

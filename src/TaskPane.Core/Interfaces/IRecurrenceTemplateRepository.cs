@@ -9,6 +9,8 @@ public interface IRecurrenceTemplateRepository
 
     Task<IReadOnlyList<RecurrenceTemplate>> ListEnabledAsync(CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<RecurrenceTemplate>> ListAllAsync(CancellationToken cancellationToken = default);
+
     Task InsertAsync(RecurrenceTemplate template, CancellationToken cancellationToken = default);
 
     Task UpdateAsync(RecurrenceTemplate template, CancellationToken cancellationToken = default);

@@ -2,7 +2,7 @@
 
 TaskPane is a Windows 11, offline-first personal task and focus manager. Its primary interaction is a **small, movable, resizable, translucent, always-on-top overlay**. A separate **full management window** provides detailed planning, notes, reporting and configuration. Both windows use the same local data.
 
-**Status:** Phase 0–5 implemented (foundation through recurrence templates, independent occurrences, reminders with quiet hours). Later phases are planned in `docs/TASKS.md`.
+**Status:** Phase 0–6 implemented (foundation through backup, JSON/Markdown transfer, and recovery). Phase 7 polish/shipping remains in `docs/TASKS.md`.
 
 ## Start here
 

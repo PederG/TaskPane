@@ -39,4 +39,13 @@ public static class ValidationCodes
     public const string InvalidReminder = "invalid_reminder";
     public const string ReminderNotFound = "reminder_not_found";
     public const string QuietHoursInvalid = "quiet_hours_invalid";
+    public const string BackupFailed = "backup_failed";
+    public const string BackupNotFound = "backup_not_found";
+    public const string ImportInvalid = "import_invalid";
+    public const string ImportConflict = "import_conflict";
+    public const string ImportSchemaUnsupported = "import_schema_unsupported";
+    public const string ExportFailed = "export_failed";
+    public const string DocumentsUnavailable = "documents_unavailable";
+    public const string RestoreFailed = "restore_failed";
+    public const string BackupRetentionInvalid = "backup_retention_invalid";
 }

@@ -400,7 +400,7 @@
               </DockPanel>
 
               <TextBlock Text="Quick-capture hotkey" FontWeight="SemiBold" Margin="0,0,0,8" />
-              <DockPanel>
+              <DockPanel Margin="0,0,0,16">
                 <Button DockPanel.Dock="Right" Content="Save hotkey" Margin="8,0,0,0" Padding="8,4"
                         Command="{Binding SaveHotkeyCommand}" />
                 <CheckBox DockPanel.Dock="Right" Content="Enabled" IsChecked="{Binding HotkeyEnabled}"
@@ -408,6 +408,39 @@
                 <TextBox Text="{Binding HotkeyLabel, UpdateSourceTrigger=PropertyChanged}" Padding="8,6"
                          ToolTip="Examples: Ctrl+Alt+Space, Ctrl+Shift+Q" />
               </DockPanel>
+
+              <TextBlock Text="Backup / import / export" FontWeight="SemiBold" Margin="0,0,0,8" />
+              <TextBlock Text="{Binding BackupStatusText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                         Foreground="#FF555555"
+                         AutomationProperties.Name="Backup status" />
+              <WrapPanel Margin="0,0,0,8">
+                <Button Content="Backup now" Margin="0,0,8,8" Padding="8,4"
+                        Command="{Binding BackupNowCommand}"
+                        AutomationProperties.Name="Backup now" />
+                <Button Content="Export JSON" Margin="0,0,8,8" Padding="8,4"
+                        Command="{Binding ExportJsonCommand}" />
+                <Button Content="Export Markdown" Margin="0,0,8,8" Padding="8,4"
+                        Command="{Binding ExportMarkdownCommand}"
+                        ToolTip="Human-readable only — not a full restore format." />
+                <Button Content="Preview import" Margin="0,0,8,8" Padding="8,4"
+                        Command="{Binding PreviewImportCommand}" />
+                <Button Content="Import JSON" Margin="0,0,8,8" Padding="8,4"
+                        Command="{Binding ImportJsonCommand}" />
+                <Button Content="Restore backup" Margin="0,0,8,8" Padding="8,4"
+                        Command="{Binding RestoreBackupCommand}" />
+                <Button Content="Recovery help" Margin="0,0,8,8" Padding="8,4"
+                        Command="{Binding ShowRecoveryHelpCommand}" />
+              </WrapPanel>
+              <DockPanel Margin="0,0,0,8">
+                <TextBlock DockPanel.Dock="Left" Text="Import mode" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <ComboBox SelectedItem="{Binding SelectedImportMode}">
+                  <enums:ImportMode>MergeByIdSkipConflicts</enums:ImportMode>
+                  <enums:ImportMode>MergeByIdFailOnConflict</enums:ImportMode>
+                  <enums:ImportMode>ImportAsNew</enums:ImportMode>
+                </ComboBox>
+              </DockPanel>
+              <TextBlock Text="{Binding ImportPreviewText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                         Foreground="#FF555555" />
             </StackPanel>
           </DockPanel>
         </Border>
