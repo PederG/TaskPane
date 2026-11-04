@@ -103,11 +103,14 @@ public sealed class SqliteTaskRepository : ITaskRepository
             cmd.CommandText = """
                 INSERT INTO Tasks (
                     Id, ParentTaskId, Title, Notes, Priority, FocusBucket, Status,
-                    ManualSortKey, CreatedUtc, UpdatedUtc, CompletedUtc, DeletedUtc,
-                    DeletionBatchId, Revision)
+                    ManualSortKey, DeadlineLocalDate, DeadlineLocalTime, DeadlineTimeZoneId,
+                    SleepUntilUtc, SleepIndefinitely, WaitingFor, WaitingFollowUpUtc, ProjectId,
+                    CreatedUtc, UpdatedUtc, CompletedUtc, DeletedUtc, DeletionBatchId, Revision)
                 VALUES (
                     $id, $parent, $title, $notes, $priority, $focus, $status,
-                    $sort, $created, $updated, $completed, $deleted, $batch, $rev);
+                    $sort, $deadlineDate, $deadlineTime, $deadlineTz,
+                    $sleepUntil, $sleepIndef, $waitingFor, $waitingFollowUp, $project,
+                    $created, $updated, $completed, $deleted, $batch, $rev);
                 """;
             Bind(cmd, task);
             await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -138,6 +141,14 @@ public sealed class SqliteTaskRepository : ITaskRepository
                     FocusBucket = $focus,
                     Status = $status,
                     ManualSortKey = $sort,
+                    DeadlineLocalDate = $deadlineDate,
+                    DeadlineLocalTime = $deadlineTime,
+                    DeadlineTimeZoneId = $deadlineTz,
+                    SleepUntilUtc = $sleepUntil,
+                    SleepIndefinitely = $sleepIndef,
+                    WaitingFor = $waitingFor,
+                    WaitingFollowUpUtc = $waitingFollowUp,
+                    ProjectId = $project,
                     CreatedUtc = $created,
                     UpdatedUtc = $updated,
                     CompletedUtc = $completed,
@@ -321,6 +332,14 @@ public sealed class SqliteTaskRepository : ITaskRepository
         cmd.Parameters.AddWithValue("$focus", (int)task.FocusBucket);
         cmd.Parameters.AddWithValue("$status", (int)task.Status);
         cmd.Parameters.AddWithValue("$sort", task.ManualSortKey);
+        cmd.Parameters.AddWithValue("$deadlineDate", (object?)task.DeadlineLocalDate ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$deadlineTime", (object?)task.DeadlineLocalTime ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$deadlineTz", (object?)task.DeadlineTimeZoneId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$sleepUntil", (object?)task.SleepUntilUtc?.ToString("O") ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$sleepIndef", task.SleepIndefinitely ? 1 : 0);
+        cmd.Parameters.AddWithValue("$waitingFor", (object?)task.WaitingFor ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$waitingFollowUp", (object?)task.WaitingFollowUpUtc?.ToString("O") ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$project", (object?)task.ProjectId?.ToString() ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$created", task.CreatedUtc.ToString("O"));
         cmd.Parameters.AddWithValue("$updated", task.UpdatedUtc.ToString("O"));
         cmd.Parameters.AddWithValue("$completed", (object?)task.CompletedUtc?.ToString("O") ?? DBNull.Value);
@@ -336,6 +355,29 @@ public sealed class SqliteTaskRepository : ITaskRepository
         string? deleted = reader["DeletedUtc"] is DBNull ? null : Convert.ToString(reader["DeletedUtc"]);
         string? batch = reader["DeletionBatchId"] is DBNull ? null : Convert.ToString(reader["DeletionBatchId"]);
         string? notes = reader["Notes"] is DBNull ? null : Convert.ToString(reader["Notes"]);
+        string? deadlineDate = HasColumn(reader, "DeadlineLocalDate") && reader["DeadlineLocalDate"] is not DBNull
+            ? Convert.ToString(reader["DeadlineLocalDate"])
+            : null;
+        string? deadlineTime = HasColumn(reader, "DeadlineLocalTime") && reader["DeadlineLocalTime"] is not DBNull
+            ? Convert.ToString(reader["DeadlineLocalTime"])
+            : null;
+        string? deadlineTz = HasColumn(reader, "DeadlineTimeZoneId") && reader["DeadlineTimeZoneId"] is not DBNull
+            ? Convert.ToString(reader["DeadlineTimeZoneId"])
+            : null;
+        string? sleepUntil = HasColumn(reader, "SleepUntilUtc") && reader["SleepUntilUtc"] is not DBNull
+            ? Convert.ToString(reader["SleepUntilUtc"])
+            : null;
+        var sleepIndef = HasColumn(reader, "SleepIndefinitely") && reader["SleepIndefinitely"] is not DBNull
+            && Convert.ToInt32(reader["SleepIndefinitely"]) != 0;
+        string? waitingFor = HasColumn(reader, "WaitingFor") && reader["WaitingFor"] is not DBNull
+            ? Convert.ToString(reader["WaitingFor"])
+            : null;
+        string? waitingFollowUp = HasColumn(reader, "WaitingFollowUpUtc") && reader["WaitingFollowUpUtc"] is not DBNull
+            ? Convert.ToString(reader["WaitingFollowUpUtc"])
+            : null;
+        string? project = HasColumn(reader, "ProjectId") && reader["ProjectId"] is not DBNull
+            ? Convert.ToString(reader["ProjectId"])
+            : null;
 
         return new TaskItem
         {
@@ -347,6 +389,14 @@ public sealed class SqliteTaskRepository : ITaskRepository
             FocusBucket = (FocusBucket)Convert.ToInt32(reader["FocusBucket"]),
             Status = (TaskLifecycleStatus)Convert.ToInt32(reader["Status"]),
             ManualSortKey = Convert.ToDouble(reader["ManualSortKey"]),
+            DeadlineLocalDate = deadlineDate,
+            DeadlineLocalTime = deadlineTime,
+            DeadlineTimeZoneId = deadlineTz,
+            SleepUntilUtc = sleepUntil is null ? null : DateTimeOffset.Parse(sleepUntil),
+            SleepIndefinitely = sleepIndef,
+            WaitingFor = waitingFor,
+            WaitingFollowUpUtc = waitingFollowUp is null ? null : DateTimeOffset.Parse(waitingFollowUp),
+            ProjectId = project is null ? null : ProjectId.Parse(project),
             CreatedUtc = DateTimeOffset.Parse(Convert.ToString(reader["CreatedUtc"])!),
             UpdatedUtc = DateTimeOffset.Parse(Convert.ToString(reader["UpdatedUtc"])!),
             CompletedUtc = completed is null ? null : DateTimeOffset.Parse(completed),
@@ -354,5 +404,18 @@ public sealed class SqliteTaskRepository : ITaskRepository
             DeletionBatchId = batch is null ? null : Guid.Parse(batch),
             Revision = Convert.ToInt64(reader["Revision"])
         };
+    }
+
+    private static bool HasColumn(SqliteDataReader reader, string name)
+    {
+        for (var i = 0; i < reader.FieldCount; i++)
+        {
+            if (string.Equals(reader.GetName(i), name, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

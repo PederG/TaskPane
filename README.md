@@ -2,7 +2,7 @@
 
 TaskPane is a Windows 11, offline-first personal task and focus manager. Its primary interaction is a **small, movable, resizable, translucent, always-on-top overlay**. A separate **full management window** provides detailed planning, notes, reporting and configuration. Both windows use the same local data.
 
-**Status:** Phase 0–1 implemented (foundation, overlay/manager shell, task persistence). Later phases are planned in `docs/TASKS.md`.
+**Status:** Phase 0–2 implemented (foundation, overlay/manager, rich editing, focus filters, sleep/deadlines/tags, quick capture). Later phases are planned in `docs/TASKS.md`.
 
 ## Start here
 
@@ -30,7 +30,7 @@ TaskPane.sln
 src/
   TaskPane.App/             # WPF overlay, manager, tray, DI bootstrap
   TaskPane.Core/            # Entities, enums, validation, interfaces
-  TaskPane.Application/     # Task and overlay settings services
+  TaskPane.Application/     # Task, focus, organization, hotkey settings services
   TaskPane.Infrastructure/  # SQLite, migrations, local paths
 tests/
   TaskPane.Core.Tests/

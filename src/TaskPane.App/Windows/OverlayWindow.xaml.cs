@@ -79,6 +79,19 @@ public partial class OverlayWindow : Window
         }
     }
 
+    private void TaskTitle_OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: ViewModels.TaskRowViewModel row })
+        {
+            if (_viewModel.ShowNotesCommand.CanExecute(row))
+            {
+                _viewModel.ShowNotesCommand.Execute(row);
+            }
+
+            e.Handled = true;
+        }
+    }
+
     private void OverlayWindow_OnPlacementChanged(object? sender, EventArgs e)
     {
         if (_suppressPlacementSave || !IsVisible)

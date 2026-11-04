@@ -27,7 +27,7 @@ jobs:
           dotnet test TaskPane.sln
           -c Release
           --no-build
-          --filter "FullyQualifiedName!~TaskPane.App"
+          --filter "FullyQualifiedName!~TaskPane.App."
           --logger "trx;LogFileName=test-results.trx"
 
   build-wpf-windows:

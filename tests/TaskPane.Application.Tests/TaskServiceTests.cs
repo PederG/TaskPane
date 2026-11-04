@@ -82,10 +82,165 @@ public sealed class TaskServiceTests
         Assert.Equal(TaskPriority.High, list[0].Priority);
     }
 
+    [Fact]
+    public async Task Undated_high_priority_ranks_ahead_of_dated_low_when_sorting_by_priority()
+    {
+        var sut = CreateSut(out _);
+        var datedLow = await sut.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Dated low",
+            FocusBucket = FocusBucket.Today,
+            Priority = TaskPriority.Low,
+            DeadlineLocalDate = "2026-11-01"
+        });
+        var undatedHigh = await sut.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Undated high",
+            FocusBucket = FocusBucket.Today,
+            Priority = TaskPriority.High
+        });
+
+        var list = await sut.QueryRootsAsync(new TaskQuery
+        {
+            FocusBucket = FocusBucket.Today,
+            SortMode = TaskSortMode.Priority,
+            IncludeSleeping = true
+        });
+
+        Assert.Equal(undatedHigh.Id, list[0].Id);
+        Assert.Equal(datedLow.Id, list[1].Id);
+        Assert.Null(list[0].DeadlineLocalDate);
+        Assert.Equal(TaskPriority.High, list[0].Priority);
+    }
+
+    [Fact]
+    public async Task Sleep_and_wake_hide_and_restore_without_changing_deadline_or_priority()
+    {
+        var sut = CreateSut(out var repo);
+        var task = await sut.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Sleepy",
+            FocusBucket = FocusBucket.Today,
+            Priority = TaskPriority.High,
+            DeadlineLocalDate = "2026-12-01"
+        });
+
+        await sut.SleepAsync(new SleepTaskRequest { Id = task.Id, Preset = SleepPreset.Indefinitely });
+        var sleeping = repo.Items.Single(t => t.Id.Equals(task.Id));
+        Assert.True(sleeping.SleepIndefinitely);
+        Assert.Equal(TaskPriority.High, sleeping.Priority);
+        Assert.Equal("2026-12-01", sleeping.DeadlineLocalDate);
+        Assert.Empty(await sut.ListVisibleRootsAsync(FocusBucket.Today));
+
+        await sut.WakeAsync(task.Id);
+        Assert.Single(await sut.ListVisibleRootsAsync(FocusBucket.Today));
+        Assert.False(repo.Items.Single(t => t.Id.Equals(task.Id)).SleepIndefinitely);
+    }
+
+    [Fact]
+    public async Task Sleeping_parent_hides_children_in_overlay_query()
+    {
+        var sut = CreateSut(out _);
+        var parent = await sut.CreateAsync(new CreateTaskRequest { Title = "Parent", FocusBucket = FocusBucket.Today });
+        var child = await sut.CreateAsync(new CreateTaskRequest { Title = "Child", ParentTaskId = parent.Id });
+
+        await sut.SleepAsync(new SleepTaskRequest { Id = parent.Id, Preset = SleepPreset.OneHour });
+        var visibleChildren = await sut.QueryChildrenAsync(parent.Id, new TaskQuery
+        {
+            OverlayVisibility = true,
+            FocusBucket = FocusBucket.Today
+        });
+        Assert.Empty(visibleChildren);
+        Assert.DoesNotContain(await sut.ListVisibleRootsAsync(FocusBucket.Today), t => t.Id.Equals(parent.Id));
+        Assert.Contains(await sut.ListSleepingRootsAsync(), t => t.Id.Equals(parent.Id));
+        _ = child;
+    }
+
+    [Fact]
+    public async Task Search_filters_by_title_and_notes()
+    {
+        var sut = CreateSut(out _);
+        await sut.CreateAsync(new CreateTaskRequest { Title = "Alpha", FocusBucket = FocusBucket.Inbox });
+        var withNotes = await sut.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Beta",
+            Notes = "secret keyword here",
+            FocusBucket = FocusBucket.Inbox
+        });
+
+        var byNotes = await sut.QueryRootsAsync(new TaskQuery
+        {
+            FocusBucket = FocusBucket.Inbox,
+            SearchText = "keyword",
+            IncludeSleeping = true
+        });
+        Assert.Single(byNotes);
+        Assert.Equal(withNotes.Id, byNotes[0].Id);
+    }
+
+    [Fact]
+    public async Task Waiting_is_independent_of_sleep()
+    {
+        var sut = CreateSut(out var repo);
+        var task = await sut.CreateAsync(new CreateTaskRequest { Title = "Wait", FocusBucket = FocusBucket.Next });
+        await sut.SetWaitingAsync(task.Id, "Vendor reply", DateTimeOffset.UtcNow.AddDays(2));
+        await sut.SleepAsync(new SleepTaskRequest { Id = task.Id, Preset = SleepPreset.Indefinitely });
+
+        var stored = repo.Items.Single(t => t.Id.Equals(task.Id));
+        Assert.Equal("Vendor reply", stored.WaitingFor);
+        Assert.True(stored.SleepIndefinitely);
+
+        var onlyWaiting = await sut.QueryRootsAsync(new TaskQuery
+        {
+            OnlyWaiting = true,
+            IncludeSleeping = true
+        });
+        Assert.Single(onlyWaiting);
+    }
+
+    [Fact]
+    public async Task Move_rejects_parent_with_children_under_another_parent()
+    {
+        var sut = CreateSut(out _);
+        var a = await sut.CreateAsync(new CreateTaskRequest { Title = "A" });
+        await sut.CreateAsync(new CreateTaskRequest { Title = "A1", ParentTaskId = a.Id });
+        var b = await sut.CreateAsync(new CreateTaskRequest { Title = "B" });
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() => sut.MoveAsync(a.Id, b.Id));
+        Assert.Equal(ValidationCodes.ParentHasChildren, ex.Code);
+    }
+
+    [Fact]
+    public async Task Move_allows_subtask_between_roots_and_promote()
+    {
+        var sut = CreateSut(out _);
+        var a = await sut.CreateAsync(new CreateTaskRequest { Title = "A", FocusBucket = FocusBucket.Today });
+        var b = await sut.CreateAsync(new CreateTaskRequest { Title = "B", FocusBucket = FocusBucket.Next });
+        var child = await sut.CreateAsync(new CreateTaskRequest { Title = "Child", ParentTaskId = a.Id });
+
+        await sut.MoveAsync(child.Id, b.Id);
+        var underB = await sut.ListChildrenAsync(b.Id);
+        Assert.Contains(underB, t => t.Id.Equals(child.Id));
+        Assert.Equal(FocusBucket.Next, underB.Single(t => t.Id.Equals(child.Id)).FocusBucket);
+
+        await sut.MoveAsync(child.Id, null);
+        Assert.Empty(await sut.ListChildrenAsync(b.Id));
+        Assert.Contains(await sut.ListVisibleRootsAsync(FocusBucket.Next), t => t.Id.Equals(child.Id));
+    }
+
     private static TaskService CreateSut(out InMemoryTaskRepository repo)
     {
         repo = new InMemoryTaskRepository();
-        return new TaskService(repo, new PassthroughUnitOfWork(), NullLogger<TaskService>.Instance);
+        var tags = new InMemoryTagRepository();
+        var projects = new InMemoryProjectRepository();
+        var focus = new FocusService(repo, tags);
+        return new TaskService(
+            repo,
+            tags,
+            projects,
+            new PassthroughUnitOfWork(),
+            focus,
+            NullLogger<TaskService>.Instance);
     }
 
     private sealed class PassthroughUnitOfWork : IUnitOfWork
@@ -170,6 +325,14 @@ public sealed class TaskServiceTests
             FocusBucket = task.FocusBucket,
             Status = task.Status,
             ManualSortKey = task.ManualSortKey,
+            DeadlineLocalDate = task.DeadlineLocalDate,
+            DeadlineLocalTime = task.DeadlineLocalTime,
+            DeadlineTimeZoneId = task.DeadlineTimeZoneId,
+            SleepUntilUtc = task.SleepUntilUtc,
+            SleepIndefinitely = task.SleepIndefinitely,
+            WaitingFor = task.WaitingFor,
+            WaitingFollowUpUtc = task.WaitingFollowUpUtc,
+            ProjectId = task.ProjectId,
             CreatedUtc = task.CreatedUtc,
             UpdatedUtc = task.UpdatedUtc,
             CompletedUtc = task.CompletedUtc,
@@ -177,5 +340,67 @@ public sealed class TaskServiceTests
             DeletionBatchId = task.DeletionBatchId,
             Revision = task.Revision
         };
+    }
+
+    private sealed class InMemoryTagRepository : ITagRepository
+    {
+        private readonly List<Tag> _tags = [];
+        private readonly Dictionary<TaskId, List<TagId>> _links = [];
+
+        public Task<Tag?> GetByIdAsync(TagId id, CancellationToken cancellationToken = default)
+            => Task.FromResult(_tags.FirstOrDefault(t => t.Id.Equals(id)));
+
+        public Task<Tag?> FindByNameAsync(string name, CancellationToken cancellationToken = default)
+            => Task.FromResult(_tags.FirstOrDefault(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase)));
+
+        public Task<IReadOnlyList<Tag>> ListAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<Tag>>(_tags.ToList());
+
+        public Task InsertAsync(Tag tag, CancellationToken cancellationToken = default)
+        {
+            _tags.Add(tag);
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateAsync(Tag tag, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task SetTaskTagsAsync(TaskId taskId, IReadOnlyList<TagId> tagIds, CancellationToken cancellationToken = default)
+        {
+            _links[taskId] = tagIds.ToList();
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<TagId>> GetTagIdsForTaskAsync(TaskId taskId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<TagId>>(_links.TryGetValue(taskId, out var ids) ? ids : []);
+
+        public Task<IReadOnlyDictionary<TaskId, IReadOnlyList<TagId>>> GetTagIdsForTasksAsync(
+            IReadOnlyList<TaskId> taskIds,
+            CancellationToken cancellationToken = default)
+        {
+            var map = taskIds.ToDictionary(
+                id => id,
+                id => (IReadOnlyList<TagId>)(_links.TryGetValue(id, out var ids) ? ids : []));
+            return Task.FromResult<IReadOnlyDictionary<TaskId, IReadOnlyList<TagId>>>(map);
+        }
+    }
+
+    private sealed class InMemoryProjectRepository : IProjectRepository
+    {
+        private readonly List<Project> _projects = [];
+
+        public Task<Project?> GetByIdAsync(ProjectId id, CancellationToken cancellationToken = default)
+            => Task.FromResult(_projects.FirstOrDefault(p => p.Id.Equals(id)));
+
+        public Task<IReadOnlyList<Project>> ListAsync(bool includeArchived = false, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<Project>>(
+                _projects.Where(p => includeArchived || !p.IsArchived).ToList());
+
+        public Task InsertAsync(Project project, CancellationToken cancellationToken = default)
+        {
+            _projects.Add(project);
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateAsync(Project project, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

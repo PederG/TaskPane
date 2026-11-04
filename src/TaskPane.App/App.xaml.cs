@@ -6,6 +6,7 @@ using TaskPane.App.Services;
 using TaskPane.App.ViewModels;
 using TaskPane.App.Windows;
 using TaskPane.Application.DependencyInjection;
+using TaskPane.Core.Entities;
 using TaskPane.Infrastructure.DependencyInjection;
 using TaskPane.Infrastructure.Migrations;
 
@@ -17,6 +18,8 @@ public partial class App : System.Windows.Application
     private SingleInstanceGuard? _singleInstance;
     private TrayIconService? _tray;
     private WindowModeController? _modeController;
+    private GlobalHotkeyService? _hotkeys;
+    private QuickCaptureWindow? _quickCapture;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -40,7 +43,6 @@ public partial class App : System.Windows.Application
                     options.TimestampFormat = "HH:mm:ss ";
                 });
                 logging.SetMinimumLevel(LogLevel.Information);
-                // Avoid logging task content: application code logs IDs only.
             })
             .ConfigureServices(services =>
             {
@@ -48,10 +50,13 @@ public partial class App : System.Windows.Application
                 services.AddTaskPaneApplication();
                 services.AddSingleton<OverlayViewModel>();
                 services.AddSingleton<ManagerViewModel>();
+                services.AddSingleton<QuickCaptureViewModel>();
                 services.AddSingleton<OverlayWindow>();
                 services.AddSingleton<ManagerWindow>();
+                services.AddSingleton<QuickCaptureWindow>();
                 services.AddSingleton<WindowModeController>();
                 services.AddSingleton<TrayIconService>();
+                services.AddSingleton<GlobalHotkeyService>();
             })
             .Build();
 
@@ -63,6 +68,8 @@ public partial class App : System.Windows.Application
         var manager = _host.Services.GetRequiredService<ManagerWindow>();
         var overlayVm = _host.Services.GetRequiredService<OverlayViewModel>();
         var managerVm = _host.Services.GetRequiredService<ManagerViewModel>();
+        _quickCapture = _host.Services.GetRequiredService<QuickCaptureWindow>();
+        var quickCaptureVm = _host.Services.GetRequiredService<QuickCaptureViewModel>();
 
         _modeController.Attach(overlay, manager);
         overlayVm.OpenManagerRequested += () =>
@@ -72,6 +79,12 @@ public partial class App : System.Windows.Application
         };
         overlayVm.QuitRequested += QuitApplication;
         managerVm.ReturnToOverlayRequested += () => _modeController.ShowOverlay();
+        managerVm.HotkeyChanged += setting => _ = ApplyHotkeyAsync(setting);
+        quickCaptureVm.Captured += () =>
+        {
+            _ = overlayVm.RefreshCommand.ExecuteAsync(null);
+            _ = manager.InitializeAsync();
+        };
 
         _tray = _host.Services.GetRequiredService<TrayIconService>();
         _tray.Initialize();
@@ -81,6 +94,7 @@ public partial class App : System.Windows.Application
             _ = manager.InitializeAsync();
             _modeController.ShowManager();
         });
+        _tray.ShowQuickCaptureRequested += () => TrayIconService.InvokeOnUi(ShowQuickCapture);
         _tray.QuitRequested += () => TrayIconService.InvokeOnUi(QuitApplication);
 
         _singleInstance.ActivationRequested += () => TrayIconService.InvokeOnUi(() =>
@@ -98,10 +112,52 @@ public partial class App : System.Windows.Application
 
         await overlay.InitializeAsync().ConfigureAwait(true);
         _modeController.ShowOverlay();
+
+        _hotkeys = _host.Services.GetRequiredService<GlobalHotkeyService>();
+        await _hotkeys.InitializeAsync(overlay).ConfigureAwait(true);
+        _hotkeys.HotkeyPressed += () => TrayIconService.InvokeOnUi(ShowQuickCapture);
+        if (_hotkeys.LastError is { } hotkeyError)
+        {
+            overlayVm.StatusMessage = hotkeyError + " Use tray → Quick capture.";
+        }
+    }
+
+    private async Task ApplyHotkeyAsync(HotkeySetting setting)
+    {
+        if (_hotkeys is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _hotkeys.ApplyAsync(setting).ConfigureAwait(true);
+            var overlayVm = _host?.Services.GetRequiredService<OverlayViewModel>();
+            if (overlayVm is not null)
+            {
+                overlayVm.StatusMessage = setting.Enabled
+                    ? $"Hotkey active: {setting.DisplayLabel}"
+                    : "Global hotkey disabled.";
+            }
+        }
+        catch (Exception ex)
+        {
+            var overlayVm = _host?.Services.GetRequiredService<OverlayViewModel>();
+            if (overlayVm is not null)
+            {
+                overlayVm.StatusMessage = ex.Message;
+            }
+        }
+    }
+
+    private void ShowQuickCapture()
+    {
+        _quickCapture?.ShowCapture();
     }
 
     private void QuitApplication()
     {
+        _hotkeys?.Dispose();
         _tray?.Dispose();
         _singleInstance?.Dispose();
         _host?.Dispose();
@@ -110,6 +166,7 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _hotkeys?.Dispose();
         _tray?.Dispose();
         _singleInstance?.Dispose();
         _host?.Dispose();

@@ -35,6 +35,19 @@ Use this log to distinguish **approved product decisions** from implementation a
 | Single-instance via named mutex + named pipe activation | Chosen | Second launch activates existing instance |
 | Tray Quit is the only normal process exit | Chosen | Manager close/minimize returns to overlay |
 
+## Implementation decisions (Phase 2)
+
+| Decision | Status | Notes |
+|---|---|---|
+| Default quick-capture hotkey **Ctrl+Alt+Space** | Chosen | Configurable in manager; conflicts reported with tray fallback |
+| Date-only deadlines stored as `YYYY-MM-DD` without midnight UTC coercion | Chosen | Overdue after local calendar day ends in deadline timezone (else local) |
+| Timed deadlines store separate local time + timezone id | Chosen | Evaluated as local DateTimeOffset; independent of priority/order |
+| Sleep uses `SleepUntilUtc` / `SleepIndefinitely` (not Status) | Chosen | Presets: 1h, tomorrow 09:00 local, +7d, indefinite, custom |
+| Parent sleep hides subtree in overlay via FocusService | Chosen | Child sleep is independent; manager can include/only-sleeping |
+| Waiting-for is free text + optional follow-up UTC | Chosen | Distinct from sleep and (later) dependency blocked |
+| Tags case-insensitive unique; projects optional FK on tasks | Chosen | Migration 002; TaskTags junction |
+| Default list sort remains manual; optional Priority/Deadline/Created sorts | Chosen | Priority sort never demotes undated High tasks |
+
 ## Proposed defaults (reasonable v1 assumptions, can be refined)
 
 - WPF/C#/.NET 10/MVVM, SQLite local live DB + backup to known Documents folder.
@@ -53,13 +66,13 @@ Use this log to distinguish **approved product decisions** from implementation a
 1. **Public packaging/brand polish:** icon and installer naming details (Phase 7).
 2. **Recurrence policy:** generation horizon, whether catch-up instances accumulate, month-end rule, instance/template edit semantics and dependent occurrence remapping (Phase 5).
 3. **Reminder presentation:** Windows toast integration compatibility vs in-app fallback, exact default quiet hours (Phase 5).
-4. **Quick-capture hotkey:** default key combination after collision/UX testing (Phase 2).
+4. **Quick-capture hotkey:** default **Ctrl+Alt+Space** chosen for Phase 2; refine after Windows collision/UX testing if needed.
 5. **Import merge semantics:** import as new vs merge by ID, collisions and orphan references (Phase 6).
 6. **Backup cadence and retention:** set conservative defaults after reliability tests (Phase 6).
 7. **Branding:** icon, color scheme and public edition packaging (Phase 7).
 8. **Soft-delete permanent purge:** explicit safety policy; no auto purge in early versions.
 9. **Auto-start:** opt-in vs default, expose toggle and document behavior (Phase 7).
-10. **Date/time semantics:** exact default timezone and preferred representation for date-only vs timed deadlines, including DST (Phase 2/5).
+10. **Date/time semantics:** date-only vs timed deadlines decided for Phase 2; DST edge cases for recurrence remain Phase 5.
 
 ## Risks
 

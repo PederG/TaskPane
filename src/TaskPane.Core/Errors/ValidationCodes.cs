@@ -12,4 +12,12 @@ public static class ValidationCodes
     public const string AlreadyDeleted = "already_deleted";
     public const string NotDeleted = "not_deleted";
     public const string InvalidOrder = "invalid_order";
+    public const string InvalidDeadline = "invalid_deadline";
+    public const string InvalidSleep = "invalid_sleep";
+    public const string TagNameRequired = "tag_name_required";
+    public const string TagDuplicate = "tag_duplicate";
+    public const string ProjectNameRequired = "project_name_required";
+    public const string ProjectNotFound = "project_not_found";
+    public const string TagNotFound = "tag_not_found";
+    public const string HotkeyConflict = "hotkey_conflict";
 }

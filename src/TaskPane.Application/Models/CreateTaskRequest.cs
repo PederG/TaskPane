@@ -10,4 +10,8 @@ public sealed class CreateTaskRequest
     public TaskId? ParentTaskId { get; init; }
     public FocusBucket FocusBucket { get; init; } = FocusBucket.Inbox;
     public TaskPriority Priority { get; init; } = TaskPriority.Normal;
+    public string? DeadlineLocalDate { get; init; }
+    public string? DeadlineLocalTime { get; init; }
+    public string? DeadlineTimeZoneId { get; init; }
+    public ProjectId? ProjectId { get; init; }
 }

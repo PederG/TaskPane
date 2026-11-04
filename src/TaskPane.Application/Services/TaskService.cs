@@ -1,10 +1,12 @@
 using Microsoft.Extensions.Logging;
 using TaskPane.Application.Models;
+using TaskPane.Application.Validation;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 using TaskPane.Core.Errors;
 using TaskPane.Core.Ids;
 using TaskPane.Core.Interfaces;
+using TaskPane.Core.Sleep;
 using TaskPane.Core.Validation;
 
 namespace TaskPane.Application.Services;
@@ -12,16 +14,25 @@ namespace TaskPane.Application.Services;
 public sealed class TaskService
 {
     private readonly ITaskRepository _tasks;
+    private readonly ITagRepository _tags;
+    private readonly IProjectRepository _projects;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly FocusService _focus;
     private readonly ILogger<TaskService> _logger;
 
     public TaskService(
         ITaskRepository tasks,
+        ITagRepository tags,
+        IProjectRepository projects,
         IUnitOfWork unitOfWork,
+        FocusService focus,
         ILogger<TaskService> logger)
     {
         _tasks = tasks;
+        _tags = tags;
+        _projects = projects;
         _unitOfWork = unitOfWork;
+        _focus = focus;
         _logger = logger;
     }
 
@@ -39,6 +50,12 @@ public sealed class TaskService
             TaskHierarchyValidator.EnsureCanBecomeParent(parent!);
         }
 
+        DeadlineValidator.Validate(request.DeadlineLocalDate, request.DeadlineLocalTime);
+        if (request.ProjectId is { } projectId)
+        {
+            await EnsureProjectAsync(projectId, cancellationToken).ConfigureAwait(false);
+        }
+
         var now = DateTimeOffset.UtcNow;
         var sortKey = await _tasks
             .GetNextSortKeyAsync(request.ParentTaskId, request.ParentTaskId is null ? request.FocusBucket : null, cancellationToken)
@@ -54,6 +71,12 @@ public sealed class TaskService
             FocusBucket = parent?.FocusBucket ?? request.FocusBucket,
             Status = TaskLifecycleStatus.Open,
             ManualSortKey = sortKey,
+            DeadlineLocalDate = DeadlineValidator.NormalizeDate(request.DeadlineLocalDate),
+            DeadlineLocalTime = DeadlineValidator.NormalizeTime(request.DeadlineLocalTime),
+            DeadlineTimeZoneId = string.IsNullOrWhiteSpace(request.DeadlineTimeZoneId)
+                ? null
+                : request.DeadlineTimeZoneId.Trim(),
+            ProjectId = request.ProjectId,
             CreatedUtc = now,
             UpdatedUtc = now,
             Revision = 1
@@ -74,12 +97,71 @@ public sealed class TaskService
     {
         var title = TaskTitle.NormalizeOrThrow(request.Title);
         var task = await RequireAsync(request.Id, cancellationToken).ConfigureAwait(false);
+        DeadlineValidator.Validate(request.DeadlineLocalDate, request.DeadlineLocalTime);
+
+        if (request.ProjectId is { } projectId)
+        {
+            await EnsureProjectAsync(projectId, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (request.TagIds is not null)
+        {
+            foreach (var tagId in request.TagIds)
+            {
+                var tag = await _tags.GetByIdAsync(tagId, cancellationToken).ConfigureAwait(false);
+                if (tag is null)
+                {
+                    throw new BusinessException(ValidationCodes.TagNotFound, "One or more tags were not found.");
+                }
+            }
+        }
 
         task.Title = title;
         task.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
         task.Priority = request.Priority;
         task.FocusBucket = request.FocusBucket;
+        task.DeadlineLocalDate = DeadlineValidator.NormalizeDate(request.DeadlineLocalDate);
+        task.DeadlineLocalTime = DeadlineValidator.NormalizeTime(request.DeadlineLocalTime);
+        task.DeadlineTimeZoneId = string.IsNullOrWhiteSpace(request.DeadlineTimeZoneId)
+            ? null
+            : request.DeadlineTimeZoneId.Trim();
+        task.WaitingFor = string.IsNullOrWhiteSpace(request.WaitingFor) ? null : request.WaitingFor.Trim();
+        task.WaitingFollowUpUtc = string.IsNullOrWhiteSpace(request.WaitingFor) ? null : request.WaitingFollowUpUtc;
+        task.ProjectId = request.ProjectId;
         task.UpdatedUtc = DateTimeOffset.UtcNow;
+        task.Revision++;
+
+        await _unitOfWork.ExecuteInTransactionAsync(async ct =>
+        {
+            await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
+            if (request.TagIds is not null)
+            {
+                await _tags.SetTaskTagsAsync(task.Id, request.TagIds, ct).ConfigureAwait(false);
+            }
+        }, cancellationToken).ConfigureAwait(false);
+
+        return task;
+    }
+
+    public async Task SleepAsync(SleepTaskRequest request, CancellationToken cancellationToken = default)
+    {
+        var task = await RequireAsync(request.Id, cancellationToken).ConfigureAwait(false);
+        var now = DateTimeOffset.UtcNow;
+
+        if (request.Preset == SleepPreset.Custom && request.CustomUntilUtc is null)
+        {
+            throw new BusinessException(ValidationCodes.InvalidSleep, "Custom sleep requires an until timestamp.");
+        }
+
+        if (request.Preset == SleepPreset.Custom && request.CustomUntilUtc <= now)
+        {
+            throw new BusinessException(ValidationCodes.InvalidSleep, "Custom sleep must be in the future.");
+        }
+
+        var until = SleepEvaluator.ResolveWakeUtc(request.Preset, now, TimeZoneInfo.Local, request.CustomUntilUtc);
+        task.SleepIndefinitely = request.Preset == SleepPreset.Indefinitely;
+        task.SleepUntilUtc = task.SleepIndefinitely ? null : until;
+        task.UpdatedUtc = now;
         task.Revision++;
 
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
@@ -87,7 +169,60 @@ public sealed class TaskService
             await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
-        return task;
+        _logger.LogInformation("Slept task {TaskId} preset={Preset}", task.Id, request.Preset);
+    }
+
+    public async Task WakeAsync(TaskId id, CancellationToken cancellationToken = default)
+    {
+        var task = await RequireAsync(id, cancellationToken).ConfigureAwait(false);
+        task.SleepIndefinitely = false;
+        task.SleepUntilUtc = null;
+        task.UpdatedUtc = DateTimeOffset.UtcNow;
+        task.Revision++;
+
+        await _unitOfWork.ExecuteInTransactionAsync(async ct =>
+        {
+            await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SetWaitingAsync(
+        TaskId id,
+        string? waitingFor,
+        DateTimeOffset? followUpUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var task = await RequireAsync(id, cancellationToken).ConfigureAwait(false);
+        task.WaitingFor = string.IsNullOrWhiteSpace(waitingFor) ? null : waitingFor.Trim();
+        task.WaitingFollowUpUtc = task.WaitingFor is null ? null : followUpUtc;
+        task.UpdatedUtc = DateTimeOffset.UtcNow;
+        task.Revision++;
+
+        await _unitOfWork.ExecuteInTransactionAsync(async ct =>
+        {
+            await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SetDeadlineAsync(
+        TaskId id,
+        string? localDate,
+        string? localTime,
+        string? timeZoneId,
+        CancellationToken cancellationToken = default)
+    {
+        DeadlineValidator.Validate(localDate, localTime);
+        var task = await RequireAsync(id, cancellationToken).ConfigureAwait(false);
+        task.DeadlineLocalDate = DeadlineValidator.NormalizeDate(localDate);
+        task.DeadlineLocalTime = DeadlineValidator.NormalizeTime(localTime);
+        task.DeadlineTimeZoneId = string.IsNullOrWhiteSpace(timeZoneId) ? null : timeZoneId.Trim();
+        task.UpdatedUtc = DateTimeOffset.UtcNow;
+        task.Revision++;
+
+        await _unitOfWork.ExecuteInTransactionAsync(async ct =>
+        {
+            await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<CompleteTaskResult> CompleteAsync(
@@ -229,6 +364,56 @@ public sealed class TaskService
         }, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Places <paramref name="id"/> between two neighbors by average sort key (or append/prepend).
+    /// </summary>
+    public async Task ReorderBetweenAsync(
+        TaskId id,
+        TaskId? beforeId,
+        TaskId? afterId,
+        CancellationToken cancellationToken = default)
+    {
+        var task = await RequireAsync(id, cancellationToken).ConfigureAwait(false);
+        double? beforeKey = null;
+        double? afterKey = null;
+
+        if (beforeId is { } b)
+        {
+            var before = await RequireAsync(b, cancellationToken).ConfigureAwait(false);
+            EnsureSameList(task, before);
+            beforeKey = before.ManualSortKey;
+        }
+
+        if (afterId is { } a)
+        {
+            var after = await RequireAsync(a, cancellationToken).ConfigureAwait(false);
+            EnsureSameList(task, after);
+            afterKey = after.ManualSortKey;
+        }
+
+        double newKey;
+        if (beforeKey is { } bk && afterKey is { } ak)
+        {
+            newKey = (bk + ak) / 2.0;
+        }
+        else if (beforeKey is { } onlyBefore)
+        {
+            newKey = onlyBefore + 1000;
+        }
+        else if (afterKey is { } onlyAfter)
+        {
+            newKey = onlyAfter - 1000;
+        }
+        else
+        {
+            newKey = await _tasks
+                .GetNextSortKeyAsync(task.ParentTaskId, task.IsRoot ? task.FocusBucket : null, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await ReorderAsync(id, newKey, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task MoveAsync(
         TaskId id,
         TaskId? newParentId,
@@ -279,18 +464,20 @@ public sealed class TaskService
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<TaskItem>> ListVisibleRootsAsync(
+    public Task<IReadOnlyList<TaskItem>> ListVisibleRootsAsync(
         FocusBucket? focus,
         CancellationToken cancellationToken = default)
-    {
-        var all = await _tasks.ListAsync(includeDeleted: false, cancellationToken).ConfigureAwait(false);
-        return all
-            .Where(t => t.IsRoot && !t.IsCompleted)
-            .Where(t => focus is null || t.FocusBucket == focus)
-            .OrderBy(t => t.ManualSortKey)
-            .ThenBy(t => t.CreatedUtc)
-            .ToList();
-    }
+        => _focus.QueryRootsAsync(new TaskQuery
+        {
+            FocusBucket = focus,
+            OverlayVisibility = true,
+            SortMode = TaskSortMode.Manual
+        }, cancellationToken: cancellationToken);
+
+    public Task<IReadOnlyList<TaskItem>> QueryRootsAsync(
+        TaskQuery query,
+        CancellationToken cancellationToken = default)
+        => _focus.QueryRootsAsync(query, cancellationToken: cancellationToken);
 
     public async Task<IReadOnlyList<TaskItem>> ListChildrenAsync(
         TaskId parentId,
@@ -304,11 +491,20 @@ public sealed class TaskService
             .ToList();
     }
 
+    public Task<IReadOnlyList<TaskItem>> QueryChildrenAsync(
+        TaskId parentId,
+        TaskQuery query,
+        CancellationToken cancellationToken = default)
+        => _focus.QueryChildrenAsync(parentId, query, cancellationToken: cancellationToken);
+
     public async Task<IReadOnlyList<TaskItem>> ListDeletedAsync(CancellationToken cancellationToken = default)
     {
         var all = await _tasks.ListAsync(includeDeleted: true, cancellationToken).ConfigureAwait(false);
         return all.Where(t => t.IsDeleted).OrderByDescending(t => t.DeletedUtc).ToList();
     }
+
+    public Task<IReadOnlyList<TaskItem>> ListSleepingRootsAsync(CancellationToken cancellationToken = default)
+        => _focus.ListSleepingRootsAsync(cancellationToken: cancellationToken);
 
     public async Task<SubtaskProgress> GetProgressAsync(
         TaskId parentId,
@@ -319,6 +515,28 @@ public sealed class TaskService
         var total = children.Count;
         var completed = children.Count(c => c.IsCompleted);
         return new SubtaskProgress(parentId, completed, total);
+    }
+
+    public Task<TaskItem?> GetAsync(TaskId id, CancellationToken cancellationToken = default)
+        => _tasks.GetByIdAsync(id, cancellationToken);
+
+    private async Task EnsureProjectAsync(ProjectId projectId, CancellationToken cancellationToken)
+    {
+        var project = await _projects.GetByIdAsync(projectId, cancellationToken).ConfigureAwait(false);
+        if (project is null || project.IsArchived)
+        {
+            throw new BusinessException(ValidationCodes.ProjectNotFound, "Project was not found.");
+        }
+    }
+
+    private static void EnsureSameList(TaskItem moving, TaskItem neighbor)
+    {
+        if (!Nullable.Equals(moving.ParentTaskId, neighbor.ParentTaskId))
+        {
+            throw new BusinessException(
+                ValidationCodes.InvalidOrder,
+                "Reorder neighbors must share the same parent.");
+        }
     }
 
     private async Task<TaskItem> RequireAsync(TaskId id, CancellationToken cancellationToken)
