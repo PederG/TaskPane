@@ -1,4 +1,7 @@
 <Project>
+  <!-- Workplace-only overrides first (gitignored). May set AppDisplayName without committing it. -->
+  <Import Project="Directory.Build.local.props" Condition="Exists('Directory.Build.local.props')" />
+
   <PropertyGroup>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -7,5 +10,7 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <LangVersion>latest</LangVersion>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Public GitHub default wordmark. Override via -p:AppDisplayName=… or Directory.Build.local.props. -->
+    <AppDisplayName Condition="'$(AppDisplayName)' == ''">TaskPane</AppDisplayName>
   </PropertyGroup>
 </Project>

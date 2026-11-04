@@ -215,14 +215,10 @@ public partial class TaskRowViewModel : ObservableObject
             parts.Add(ProgressText);
         }
 
-        if (!string.IsNullOrWhiteSpace(TimeText))
+        // Elapsed clock lives on the overlay active-task card only; keep row meta free of a second timer.
+        if (!IsTimerRunning && !string.IsNullOrWhiteSpace(TimeText))
         {
             parts.Add(TimeText);
-        }
-
-        if (IsTimerRunning)
-        {
-            parts.Add("Tracking");
         }
 
         return string.Join(" · ", parts);

@@ -5,6 +5,36 @@
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Inherits AppDisplayName from Directory.Build.props (default TaskPane). -->
   </PropertyGroup>
+
+  <!--
+    Always materialize AppBranding.g.cs from the template so -p:AppDisplayName=…
+    and Directory.Build.local.props take effect (incremental Inputs would miss property-only changes).
+  -->
+  <Target Name="GenerateAppBranding" BeforeTargets="BeforeCompile">
+    <PropertyGroup>
+      <_AppBrandingOut>$(IntermediateOutputPath)AppBranding.g.cs</_AppBrandingOut>
+      <_AppBrandingName>$(AppDisplayName)</_AppBrandingName>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(_AppBrandingName)' == ''">
+      <_AppBrandingName>TaskPane</_AppBrandingName>
+    </PropertyGroup>
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <ReadLinesFromFile File="Branding\AppBranding.cs.in">
+      <Output TaskParameter="Lines" ItemName="_AppBrandingTemplateLines" />
+    </ReadLinesFromFile>
+    <ItemGroup>
+      <_AppBrandingOutLines Include="@(_AppBrandingTemplateLines->Replace('__APP_DISPLAY_NAME__', $(_AppBrandingName)))" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_AppBrandingOut)"
+                      Lines="@(_AppBrandingOutLines)"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(_AppBrandingOut)" />
+      <FileWrites Include="$(_AppBrandingOut)" />
+    </ItemGroup>
+  </Target>
 
 </Project>

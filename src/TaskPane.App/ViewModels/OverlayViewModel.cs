@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TaskPane.Application.Models;
 using TaskPane.Application.Services;
+using TaskPane.Core.Branding;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 using TaskPane.Core.Ids;
@@ -75,7 +76,7 @@ public partial class OverlayViewModel : ObservableObject
     private bool _hideBlocked;
 
     [ObservableProperty]
-    private string _displayName = "TaskPane";
+    private string _displayName = AppBranding.DefaultAppDisplayName;
 
     [ObservableProperty]
     private string _searchText = string.Empty;
@@ -137,7 +138,9 @@ public partial class OverlayViewModel : ObservableObject
         MaxContentHeight = Placement.MaxHeight > 0 ? Placement.MaxHeight : 720;
 
         var app = await _appSettings.GetAsync(cancellationToken).ConfigureAwait(true);
-        DisplayName = string.IsNullOrWhiteSpace(app.ProductDisplayName) ? "TaskPane" : app.ProductDisplayName;
+        DisplayName = string.IsNullOrWhiteSpace(app.AppDisplayName)
+            ? AppBranding.DefaultAppDisplayName
+            : app.AppDisplayName;
 
         await RefreshAsync(cancellationToken).ConfigureAwait(true);
     }

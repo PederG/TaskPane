@@ -32,7 +32,7 @@ public sealed class AppSettingsAndCrashRecoveryTests
                 Theme = ThemePreference.Light,
                 UiTextScalePercent = 999,
                 EnableFileLogging = false,
-                ProductDisplayName = "  "
+                AppDisplayName = "  "
             });
 
             var loaded = await appSettings.GetAsync();
@@ -40,7 +40,7 @@ public sealed class AppSettingsAndCrashRecoveryTests
             Assert.Equal(ThemePreference.Light, loaded.Theme);
             Assert.Equal(150, loaded.UiTextScalePercent);
             Assert.False(loaded.EnableFileLogging);
-            Assert.Equal("TaskPane", loaded.ProductDisplayName);
+            Assert.Equal("TaskPane", loaded.AppDisplayName);
         }
         finally
         {

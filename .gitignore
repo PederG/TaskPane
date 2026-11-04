@@ -32,3 +32,6 @@ Desktop.ini
 
 # Project docs (kept locally / out of public tree)
 docs/
+
+# Workplace-only MSBuild overrides (e.g. AppDisplayName) — never commit private branding
+Directory.Build.local.props

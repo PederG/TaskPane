@@ -21,6 +21,11 @@ public sealed class AppSettings
     /// <summary>When true after an unclean exit, surface a recovery status message at startup.</summary>
     public bool ShowCrashRecoveryNotice { get; set; } = true;
 
-    /// <summary>Public product wordmark shown in chrome. Defaults to TaskPane.</summary>
-    public string ProductDisplayName { get; set; } = "TaskPane";
+    /// <summary>
+    /// Product wordmark shown in overlay/manager chrome.
+    /// Defaults to <see cref="Branding.AppBranding.DefaultAppDisplayName"/> (TaskPane in public builds).
+    /// Workplace installs may set this in local settings or bake a build-time default via MSBuild
+    /// <c>AppDisplayName</c> — do not commit private workplace names as the public default.
+    /// </summary>
+    public string AppDisplayName { get; set; } = Branding.AppBranding.DefaultAppDisplayName;
 }

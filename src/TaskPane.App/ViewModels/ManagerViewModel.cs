@@ -1592,13 +1592,16 @@ public partial class ManagerViewModel : ObservableObject
     {
         try
         {
+            var current = await _appSettings.GetAsync().ConfigureAwait(true);
             var settings = new AppSettings
             {
                 AutostartEnabled = AutostartEnabled,
                 Theme = ThemePreference,
                 UiTextScalePercent = UiTextScalePercent,
                 EnableFileLogging = EnableFileLogging,
-                ShowCrashRecoveryNotice = true
+                ShowCrashRecoveryNotice = true,
+                // Preserve workplace/runtime wordmark; manager UI does not edit branding.
+                AppDisplayName = current.AppDisplayName
             };
             await _appSettings.SaveAsync(settings).ConfigureAwait(true);
             var reloaded = await _appSettings.GetAsync().ConfigureAwait(true);
