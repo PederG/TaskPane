@@ -215,6 +215,60 @@ public sealed class SqlitePersistenceTests
         }
     }
 
+    [Fact]
+    public async Task Phase4_dependencies_history_and_undo_persist()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "TaskPaneTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var dbPath = Path.Combine(root, "tasks.db");
+
+        try
+        {
+            await using (var services = Build(dbPath))
+            {
+                await services.GetRequiredService<SqliteMigrator>().MigrateAsync();
+                var tasks = services.GetRequiredService<TaskService>();
+                var deps = services.GetRequiredService<DependencyService>();
+                var history = services.GetRequiredService<HistoryService>();
+
+                var blocker = await tasks.CreateAsync(new CreateTaskRequest { Title = "Blocker" });
+                var dependent = await tasks.CreateAsync(new CreateTaskRequest { Title = "Dependent" });
+                await deps.AddRequiredAsync(blocker.Id, dependent.Id);
+
+                var cycle = await Assert.ThrowsAsync<Core.Errors.BusinessException>(() =>
+                    deps.AddRequiredAsync(dependent.Id, blocker.Id));
+                Assert.Equal(Core.Errors.ValidationCodes.DependencyCycle, cycle.Code);
+
+                Assert.True((await deps.GetBlockedStateAsync(dependent.Id)).IsBlocked);
+                await tasks.CompleteAsync(blocker.Id, null);
+                Assert.False((await deps.GetBlockedStateAsync(dependent.Id)).IsBlocked);
+
+                await history.UndoLatestAsync();
+                Assert.False((await tasks.GetAsync(blocker.Id))!.IsCompleted);
+                Assert.True((await deps.GetBlockedStateAsync(dependent.Id)).IsBlocked);
+            }
+
+            await using (var services = Build(dbPath))
+            {
+                await services.GetRequiredService<SqliteMigrator>().MigrateAsync();
+                var tasks = services.GetRequiredService<TaskService>();
+                var deps = services.GetRequiredService<DependencyService>();
+                var history = services.GetRequiredService<HistoryService>();
+                var roots = await tasks.ListVisibleRootsAsync(null);
+                var blocker = roots.Single(t => t.Title == "Blocker");
+                var dependent = roots.Single(t => t.Title == "Dependent");
+                var info = await deps.GetTaskDependencyInfoAsync(dependent.Id);
+                Assert.Single(info.DependsOn);
+                Assert.True(info.Blocked.IsBlocked);
+                Assert.Contains(await history.ListRecentAsync(), e => e.Action == Core.Enums.AuditAction.Completed && e.IsUndone);
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* ignore */ }
+        }
+    }
+
     private static ServiceProvider Build(string dbPath)
     {
         var services = new ServiceCollection();

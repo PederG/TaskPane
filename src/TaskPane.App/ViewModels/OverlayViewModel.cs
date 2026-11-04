@@ -15,16 +15,19 @@ public partial class OverlayViewModel : ObservableObject
     private readonly TaskService _taskService;
     private readonly OverlaySettingsService _overlaySettings;
     private readonly TimeTrackingService _timeTracking;
+    private readonly DependencyService _dependencies;
     private readonly HashSet<TaskId> _expanded = [];
 
     public OverlayViewModel(
         TaskService taskService,
         OverlaySettingsService overlaySettings,
-        TimeTrackingService timeTracking)
+        TimeTrackingService timeTracking,
+        DependencyService dependencies)
     {
         _taskService = taskService;
         _overlaySettings = overlaySettings;
         _timeTracking = timeTracking;
+        _dependencies = dependencies;
     }
 
     public ObservableCollection<TaskRowViewModel> VisibleTasks { get; } = [];
@@ -60,6 +63,9 @@ public partial class OverlayViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasSleepingTasks;
 
+    [ObservableProperty]
+    private bool _hideBlocked;
+
     public event Action? OpenManagerRequested;
     public event Action? QuitRequested;
     public Func<string, int, Task<ParentCompletionChoice>>? ConfirmParentCompletion { get; set; }
@@ -76,8 +82,22 @@ public partial class OverlayViewModel : ObservableObject
     private async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         var active = await _timeTracking.GetActiveSessionAsync(cancellationToken).ConfigureAwait(true);
-        var roots = await _taskService.ListVisibleRootsAsync(SelectedFocus, cancellationToken).ConfigureAwait(true);
+        var query = new TaskQuery
+        {
+            FocusBucket = SelectedFocus,
+            OverlayVisibility = true,
+            HideBlocked = HideBlocked
+        };
+        var roots = await _taskService.QueryRootsAsync(query, cancellationToken).ConfigureAwait(true);
         VisibleTasks.Clear();
+
+        var ids = new List<TaskId>();
+        foreach (var root in roots)
+        {
+            ids.Add(root.Id);
+        }
+
+        var blockedMap = await _dependencies.GetBlockedStatesAsync(ids, cancellationToken).ConfigureAwait(true);
 
         foreach (var root in roots)
         {
@@ -85,6 +105,11 @@ public partial class OverlayViewModel : ObservableObject
             var expanded = _expanded.Contains(root.Id);
             var row = new TaskRowViewModel(root, progress, expanded);
             await ApplyTimeAsync(row, active, cancellationToken).ConfigureAwait(true);
+            if (blockedMap.TryGetValue(root.Id, out var state))
+            {
+                row.ApplyBlocked(state.IsBlocked, state.HasDeletedPredecessorWarning);
+            }
+
             VisibleTasks.Add(row);
 
             if (!expanded)
@@ -94,12 +119,25 @@ public partial class OverlayViewModel : ObservableObject
 
             var children = await _taskService.QueryChildrenAsync(
                 root.Id,
-                new TaskQuery { OverlayVisibility = true, FocusBucket = SelectedFocus },
+                new TaskQuery
+                {
+                    OverlayVisibility = true,
+                    FocusBucket = SelectedFocus,
+                    HideBlocked = HideBlocked
+                },
                 cancellationToken).ConfigureAwait(true);
+            var childBlocked = await _dependencies
+                .GetBlockedStatesAsync(children.Select(c => c.Id).ToList(), cancellationToken)
+                .ConfigureAwait(true);
             foreach (var child in children)
             {
                 var childRow = new TaskRowViewModel(child);
                 await ApplyTimeAsync(childRow, active, cancellationToken).ConfigureAwait(true);
+                if (childBlocked.TryGetValue(child.Id, out var childState))
+                {
+                    childRow.ApplyBlocked(childState.IsBlocked, childState.HasDeletedPredecessorWarning);
+                }
+
                 VisibleTasks.Add(childRow);
             }
         }
@@ -135,11 +173,20 @@ public partial class OverlayViewModel : ObservableObject
             return;
         }
 
+        var blocked = await _dependencies.GetBlockedStateAsync(row.Id).ConfigureAwait(true);
         await _timeTracking.ToggleAsync(row.Id).ConfigureAwait(true);
+        if (blocked.IsBlocked)
+        {
+            StatusMessage = "Timer override on blocked task.";
+        }
+
         await RefreshAsync().ConfigureAwait(true);
     }
 
     partial void OnSelectedFocusChanged(FocusBucket value)
+        => _ = RefreshAsync();
+
+    partial void OnHideBlockedChanged(bool value)
         => _ = RefreshAsync();
 
     [RelayCommand]

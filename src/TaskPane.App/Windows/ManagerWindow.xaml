@@ -29,7 +29,10 @@
       </ComboBox>
       <Button Content="All focus" Margin="0,0,8,0" Padding="8,4" Command="{Binding ClearFocusFilterCommand}" />
       <Button Content="Tasks" Margin="0,0,8,0" Command="{Binding ShowTasksCommand}" Padding="10,4" />
-      <Button Content="Recycle bin" Command="{Binding ShowRecycleBinCommand}" Padding="10,4" />
+      <Button Content="History" Margin="0,0,8,0" Command="{Binding ShowHistoryCommand}" Padding="10,4" />
+      <Button Content="Recycle bin" Margin="0,0,8,0" Command="{Binding ShowRecycleBinCommand}" Padding="10,4" />
+      <Button Content="Undo" Command="{Binding UndoLatestCommand}" Padding="10,4"
+              AutomationProperties.Name="Undo latest change" />
       <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#FF555555" />
     </StackPanel>
 
@@ -38,6 +41,8 @@
         <ColumnDefinition Width="2*" />
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="Auto" />
@@ -62,7 +67,9 @@
       <CheckBox Grid.Column="3" Content="Include sleeping" IsChecked="{Binding IncludeSleeping}" Margin="0,0,8,0" VerticalAlignment="Center" />
       <CheckBox Grid.Column="4" Content="Only sleeping" IsChecked="{Binding OnlySleeping}" Margin="0,0,8,0" VerticalAlignment="Center" />
       <CheckBox Grid.Column="5" Content="Only waiting" IsChecked="{Binding OnlyWaiting}" Margin="0,0,8,0" VerticalAlignment="Center" />
-      <ComboBox Grid.Column="6" SelectedItem="{Binding SortMode}">
+      <CheckBox Grid.Column="6" Content="Only blocked" IsChecked="{Binding OnlyBlocked}" Margin="0,0,8,0" VerticalAlignment="Center" />
+      <CheckBox Grid.Column="7" Content="Hide blocked" IsChecked="{Binding HideBlocked}" Margin="0,0,8,0" VerticalAlignment="Center" />
+      <ComboBox Grid.Column="8" SelectedItem="{Binding SortMode}">
         <enums:TaskSortMode>Manual</enums:TaskSortMode>
         <enums:TaskSortMode>Priority</enums:TaskSortMode>
         <enums:TaskSortMode>Deadline</enums:TaskSortMode>
@@ -111,6 +118,9 @@
                 <DataTrigger Binding="{Binding ShowingRecycleBin}" Value="True">
                   <Setter Property="Visibility" Value="Collapsed" />
                 </DataTrigger>
+                <DataTrigger Binding="{Binding ShowingHistory}" Value="True">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
               </Style.Triggers>
             </Style>
           </ListBox.Style>
@@ -127,6 +137,9 @@
                         </DataTrigger>
                         <DataTrigger Binding="{Binding IsOverdue}" Value="True">
                           <Setter Property="Foreground" Value="#FFB00020" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsBlocked}" Value="True">
+                          <Setter Property="Foreground" Value="#FF8A5A00" />
                         </DataTrigger>
                       </Style.Triggers>
                     </Style>
@@ -155,7 +168,34 @@
                 <Button DockPanel.Dock="Right" Content="Restore" Margin="8,0,0,0"
                         Command="{Binding DataContext.RestoreDeletedCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                         CommandParameter="{Binding}" />
-                <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+                <StackPanel>
+                  <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding MetaText}" FontSize="11" Foreground="#FF8A5A00" TextWrapping="Wrap" />
+                </StackPanel>
+              </DockPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+        <ListBox ItemsSource="{Binding HistoryRows}">
+          <ListBox.Style>
+            <Style TargetType="ListBox">
+              <Setter Property="Visibility" Value="Collapsed" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding ShowingHistory}" Value="True">
+                  <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </ListBox.Style>
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <DockPanel Margin="0,2">
+                <Button DockPanel.Dock="Right" Content="Undo" Margin="8,0,0,0" Padding="8,4"
+                        Command="{Binding DataContext.UndoHistoryRowCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"
+                        IsEnabled="{Binding IsUndoable}" />
+                <TextBlock Text="{Binding Display}" TextWrapping="Wrap" VerticalAlignment="Center" />
               </DockPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>
@@ -223,6 +263,41 @@
                         Margin="0,0,0,10" />
               <TextBlock Text="Tags (comma-separated)" Margin="0,0,0,4" />
               <TextBox Text="{Binding EditTagsCsv, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,16" />
+
+              <TextBlock Text="Dependencies" FontWeight="SemiBold" Margin="0,0,0,8" />
+              <TextBlock Text="{Binding BlockedSummary}" Margin="0,0,0,8" Foreground="#FF8A5A00"
+                         AutomationProperties.Name="Blocked status" />
+              <TextBlock Text="Depends on" Margin="0,0,0,4" />
+              <ListBox ItemsSource="{Binding DependsOnLinks}" Height="72" Margin="0,0,0,8"
+                       AutomationProperties.Name="Depends on list">
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <DockPanel>
+                      <Button DockPanel.Dock="Right" Content="Remove" Margin="8,0,0,0" Padding="6,2"
+                              Command="{Binding DataContext.RemoveDependencyCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                              CommandParameter="{Binding}" />
+                      <TextBlock VerticalAlignment="Center">
+                        <Run Text="{Binding OtherTitle, Mode=OneWay}" />
+                        <Run Text=" " />
+                        <Run Text="{Binding Kind, Mode=OneWay}" Foreground="#FF777777" />
+                      </TextBlock>
+                    </DockPanel>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+              <TextBlock Text="Blocks" Margin="0,0,0,4" />
+              <ListBox ItemsSource="{Binding BlocksLinks}" Height="72" Margin="0,0,0,8"
+                       DisplayMemberPath="OtherTitle"
+                       AutomationProperties.Name="Blocks list" />
+              <DockPanel Margin="0,0,0,16">
+                <Button DockPanel.Dock="Right" Content="Add required" Margin="8,0,0,0" Padding="8,4"
+                        Command="{Binding AddDependencyCommand}"
+                        AutomationProperties.Name="Add required dependency" />
+                <ComboBox ItemsSource="{Binding DependencyCandidates}"
+                          SelectedItem="{Binding SelectedPredecessor}"
+                          DisplayMemberPath="Title"
+                          AutomationProperties.Name="Predecessor task" />
+              </DockPanel>
 
               <TextBlock Text="Time tracking" FontWeight="SemiBold" Margin="0,0,0,8" />
               <TextBlock Text="{Binding TimeTotalsText}" Margin="0,0,0,8" Foreground="#FF444444" />

@@ -7,6 +7,7 @@ using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 using TaskPane.Core.Ids;
 using TaskPane.Core.Time;
+using AuditAction = TaskPane.Core.Enums.AuditAction;
 
 namespace TaskPane.App.ViewModels;
 
@@ -16,17 +17,23 @@ public partial class ManagerViewModel : ObservableObject
     private readonly OrganizationService _organization;
     private readonly HotkeySettingsService _hotkeySettings;
     private readonly TimeTrackingService _timeTracking;
+    private readonly DependencyService _dependencies;
+    private readonly HistoryService _history;
 
     public ManagerViewModel(
         TaskService taskService,
         OrganizationService organization,
         HotkeySettingsService hotkeySettings,
-        TimeTrackingService timeTracking)
+        TimeTrackingService timeTracking,
+        DependencyService dependencies,
+        HistoryService history)
     {
         _taskService = taskService;
         _organization = organization;
         _hotkeySettings = hotkeySettings;
         _timeTracking = timeTracking;
+        _dependencies = dependencies;
+        _history = history;
     }
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = [];
@@ -36,6 +43,10 @@ public partial class ManagerViewModel : ObservableObject
     public ObservableCollection<Tag> SelectedTags { get; } = [];
     public ObservableCollection<SessionRowViewModel> Sessions { get; } = [];
     public ObservableCollection<string> ReportLines { get; } = [];
+    public ObservableCollection<DependencyLinkView> DependsOnLinks { get; } = [];
+    public ObservableCollection<DependencyLinkView> BlocksLinks { get; } = [];
+    public ObservableCollection<HistoryRowViewModel> HistoryRows { get; } = [];
+    public ObservableCollection<TaskRowViewModel> DependencyCandidates { get; } = [];
 
     [ObservableProperty]
     private FocusBucket? _selectedFocus = FocusBucket.Inbox;
@@ -62,7 +73,22 @@ public partial class ManagerViewModel : ObservableObject
     private bool _onlyWaiting;
 
     [ObservableProperty]
+    private bool _onlyBlocked;
+
+    [ObservableProperty]
+    private bool _hideBlocked;
+
+    [ObservableProperty]
     private bool _showingRecycleBin;
+
+    [ObservableProperty]
+    private bool _showingHistory;
+
+    [ObservableProperty]
+    private TaskRowViewModel? _selectedPredecessor;
+
+    [ObservableProperty]
+    private string _blockedSummary = string.Empty;
 
     [ObservableProperty]
     private TaskRowViewModel? _selectedTask;
@@ -166,13 +192,25 @@ public partial class ManagerViewModel : ObservableObject
     [RelayCommand]
     private async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
+        if (ShowingHistory)
+        {
+            await RefreshHistoryAsync(cancellationToken).ConfigureAwait(true);
+            return;
+        }
+
         if (ShowingRecycleBin)
         {
             DeletedTasks.Clear();
-            var deleted = await _taskService.ListDeletedAsync(cancellationToken).ConfigureAwait(true);
-            foreach (var item in deleted)
+            var deleted = await _dependencies.ListRecycleBinEntriesAsync(cancellationToken).ConfigureAwait(true);
+            foreach (var entry in deleted)
             {
-                DeletedTasks.Add(new TaskRowViewModel(item));
+                var row = new TaskRowViewModel(entry.Task);
+                if (!string.IsNullOrWhiteSpace(entry.Warning))
+                {
+                    row.ApplyBlocked(false, entry.ParentMissingOrDeleted, entry.Warning);
+                }
+
+                DeletedTasks.Add(row);
             }
 
             return;
@@ -181,22 +219,62 @@ public partial class ManagerViewModel : ObservableObject
         var query = BuildQuery();
         var active = await _timeTracking.GetActiveSessionAsync(cancellationToken).ConfigureAwait(true);
         Tasks.Clear();
+        DependencyCandidates.Clear();
         var roots = await _taskService.QueryRootsAsync(query, cancellationToken).ConfigureAwait(true);
+        var allVisibleIds = new List<TaskId>();
+        foreach (var root in roots)
+        {
+            allVisibleIds.Add(root.Id);
+            var childrenPreview = await _taskService.QueryChildrenAsync(root.Id, query, cancellationToken)
+                .ConfigureAwait(true);
+            allVisibleIds.AddRange(childrenPreview.Select(c => c.Id));
+        }
+
+        var blockedMap = await _dependencies.GetBlockedStatesAsync(allVisibleIds, cancellationToken)
+            .ConfigureAwait(true);
+
         foreach (var root in roots)
         {
             var progress = await _taskService.GetProgressAsync(root.Id, cancellationToken).ConfigureAwait(true);
             var tagNames = await ResolveTagNamesAsync(root.Id, cancellationToken).ConfigureAwait(true);
             var row = new TaskRowViewModel(root, progress, isExpanded: true, tagNames: tagNames);
             await ApplyTimeAsync(row, active, cancellationToken).ConfigureAwait(true);
+            ApplyBlocked(row, blockedMap);
             Tasks.Add(row);
+            DependencyCandidates.Add(row);
             var children = await _taskService.QueryChildrenAsync(root.Id, query, cancellationToken).ConfigureAwait(true);
             foreach (var child in children)
             {
                 var childTags = await ResolveTagNamesAsync(child.Id, cancellationToken).ConfigureAwait(true);
                 var childRow = new TaskRowViewModel(child, tagNames: childTags);
                 await ApplyTimeAsync(childRow, active, cancellationToken).ConfigureAwait(true);
+                ApplyBlocked(childRow, blockedMap);
                 Tasks.Add(childRow);
+                DependencyCandidates.Add(childRow);
             }
+        }
+    }
+
+    private static void ApplyBlocked(
+        TaskRowViewModel row,
+        IReadOnlyDictionary<TaskId, Core.Dependencies.BlockedState> blockedMap)
+    {
+        if (!blockedMap.TryGetValue(row.Id, out var state))
+        {
+            row.ApplyBlocked(false, false);
+            return;
+        }
+
+        row.ApplyBlocked(state.IsBlocked, state.HasDeletedPredecessorWarning);
+    }
+
+    private async Task RefreshHistoryAsync(CancellationToken cancellationToken)
+    {
+        HistoryRows.Clear();
+        var events = await _history.ListRecentAsync(80, cancellationToken).ConfigureAwait(true);
+        foreach (var item in events)
+        {
+            HistoryRows.Add(new HistoryRowViewModel(item));
         }
     }
 
@@ -222,6 +300,8 @@ public partial class ManagerViewModel : ObservableObject
         IncludeSleeping = IncludeSleeping || OnlySleeping,
         OnlySleeping = OnlySleeping,
         OnlyWaiting = OnlyWaiting,
+        OnlyBlocked = OnlyBlocked,
+        HideBlocked = HideBlocked && !OnlyBlocked,
         SortMode = SortMode,
         OverlayVisibility = false
     };
@@ -249,15 +329,39 @@ public partial class ManagerViewModel : ObservableObject
     partial void OnIncludeSleepingChanged(bool value) => _ = RefreshAsync();
     partial void OnOnlySleepingChanged(bool value) => _ = RefreshAsync();
     partial void OnOnlyWaitingChanged(bool value) => _ = RefreshAsync();
+    partial void OnOnlyBlockedChanged(bool value) => _ = RefreshAsync();
+    partial void OnHideBlockedChanged(bool value) => _ = RefreshAsync();
     partial void OnSortModeChanged(TaskSortMode value) => _ = RefreshAsync();
-    partial void OnShowingRecycleBinChanged(bool value) => _ = RefreshAsync();
+    partial void OnShowingRecycleBinChanged(bool value)
+    {
+        if (value)
+        {
+            ShowingHistory = false;
+        }
+
+        _ = RefreshAsync();
+    }
+
+    partial void OnShowingHistoryChanged(bool value)
+    {
+        if (value)
+        {
+            ShowingRecycleBin = false;
+        }
+
+        _ = RefreshAsync();
+    }
 
     partial void OnSelectedTaskChanged(TaskRowViewModel? value)
     {
         SelectedTags.Clear();
         Sessions.Clear();
+        DependsOnLinks.Clear();
+        BlocksLinks.Clear();
         TimeTotalsText = string.Empty;
+        BlockedSummary = string.Empty;
         SelectedSession = null;
+        SelectedPredecessor = null;
         if (value is null)
         {
             EditTitle = string.Empty;
@@ -283,6 +387,42 @@ public partial class ManagerViewModel : ObservableObject
         EditTagsCsv = value.TagsText;
         _ = LoadSelectedTagsAsync(value.Id);
         _ = LoadSessionsAsync(value.Id);
+        _ = LoadDependenciesAsync(value.Id);
+    }
+
+    private async Task LoadDependenciesAsync(TaskId taskId)
+    {
+        DependsOnLinks.Clear();
+        BlocksLinks.Clear();
+        var info = await _dependencies.GetTaskDependencyInfoAsync(taskId).ConfigureAwait(true);
+        foreach (var link in info.DependsOn)
+        {
+            DependsOnLinks.Add(link);
+        }
+
+        foreach (var link in info.Blocks)
+        {
+            BlocksLinks.Add(link);
+        }
+
+        if (!info.Blocked.IsBlocked)
+        {
+            BlockedSummary = "Not blocked";
+            return;
+        }
+
+        var parts = new List<string> { "Blocked" };
+        if (info.Blocked.UnfinishedPredecessorIds.Count > 0)
+        {
+            parts.Add($"{info.Blocked.UnfinishedPredecessorIds.Count} unfinished predecessor(s)");
+        }
+
+        if (info.Blocked.HasDeletedPredecessorWarning)
+        {
+            parts.Add("deleted/missing predecessor warning");
+        }
+
+        BlockedSummary = string.Join(" · ", parts);
     }
 
     private async Task LoadSessionsAsync(TaskId taskId)
@@ -666,13 +806,111 @@ public partial class ManagerViewModel : ObservableObject
     private void ReturnToOverlay() => ReturnToOverlayRequested?.Invoke();
 
     [RelayCommand]
-    private void ShowRecycleBin() => ShowingRecycleBin = true;
+    private void ShowRecycleBin()
+    {
+        ShowingHistory = false;
+        ShowingRecycleBin = true;
+    }
 
     [RelayCommand]
-    private void ShowTasks() => ShowingRecycleBin = false;
+    private void ShowHistory()
+    {
+        ShowingRecycleBin = false;
+        ShowingHistory = true;
+    }
+
+    [RelayCommand]
+    private void ShowTasks()
+    {
+        ShowingRecycleBin = false;
+        ShowingHistory = false;
+    }
 
     [RelayCommand]
     private void ClearFocusFilter() => SelectedFocus = null;
+
+    [RelayCommand]
+    private async Task AddDependencyAsync()
+    {
+        if (SelectedTask is null || SelectedPredecessor is null)
+        {
+            StatusMessage = "Select a predecessor task.";
+            return;
+        }
+
+        try
+        {
+            await _dependencies.AddRequiredAsync(SelectedPredecessor.Id, SelectedTask.Id).ConfigureAwait(true);
+            StatusMessage = "Required dependency added.";
+            await LoadDependenciesAsync(SelectedTask.Id).ConfigureAwait(true);
+            await RefreshAsync().ConfigureAwait(true);
+        }
+        catch (Core.Errors.BusinessException ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task RemoveDependencyAsync(DependencyLinkView? link)
+    {
+        if (link is null || SelectedTask is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _dependencies.RemoveAsync(link.EdgeId).ConfigureAwait(true);
+            StatusMessage = "Dependency removed.";
+            await LoadDependenciesAsync(SelectedTask.Id).ConfigureAwait(true);
+            await RefreshAsync().ConfigureAwait(true);
+        }
+        catch (Core.Errors.BusinessException ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task UndoLatestAsync()
+    {
+        try
+        {
+            var undone = await _history.UndoLatestAsync().ConfigureAwait(true);
+            StatusMessage = $"Undid {undone.Action}.";
+            await RefreshAsync().ConfigureAwait(true);
+            if (SelectedTask is not null)
+            {
+                await LoadDependenciesAsync(SelectedTask.Id).ConfigureAwait(true);
+                await LoadSessionsAsync(SelectedTask.Id).ConfigureAwait(true);
+            }
+        }
+        catch (Core.Errors.BusinessException ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task UndoHistoryRowAsync(HistoryRowViewModel? row)
+    {
+        if (row is null || row.IsUndone || !row.IsUndoable)
+        {
+            return;
+        }
+
+        try
+        {
+            await _history.UndoAsync(row.Id).ConfigureAwait(true);
+            StatusMessage = $"Undid {row.Action}.";
+            await RefreshAsync().ConfigureAwait(true);
+        }
+        catch (Core.Errors.BusinessException ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
 
     [RelayCommand]
     private async Task ToggleTimerSelectedAsync()
@@ -682,7 +920,11 @@ public partial class ManagerViewModel : ObservableObject
             return;
         }
 
+        var blocked = await _dependencies.GetBlockedStateAsync(SelectedTask.Id).ConfigureAwait(true);
         await _timeTracking.ToggleAsync(SelectedTask.Id).ConfigureAwait(true);
+        StatusMessage = blocked.IsBlocked
+            ? "Timer started on blocked task (manual override)."
+            : "Timer toggled.";
         await RefreshAsync().ConfigureAwait(true);
         await LoadSessionsAsync(SelectedTask.Id).ConfigureAwait(true);
     }

@@ -59,6 +59,15 @@ public partial class TaskRowViewModel : ObservableObject
     private bool _isWaiting;
 
     [ObservableProperty]
+    private bool _isBlocked;
+
+    [ObservableProperty]
+    private bool _hasDeletedPredecessorWarning;
+
+    [ObservableProperty]
+    private string _blockedText = string.Empty;
+
+    [ObservableProperty]
     private string _deadlineText = string.Empty;
 
     [ObservableProperty]
@@ -139,6 +148,21 @@ public partial class TaskRowViewModel : ObservableObject
         }
     }
 
+    public void ApplyBlocked(bool isBlocked, bool deletedPredecessorWarning, string? detail = null)
+    {
+        IsBlocked = isBlocked;
+        HasDeletedPredecessorWarning = deletedPredecessorWarning;
+        BlockedText = isBlocked
+            ? (deletedPredecessorWarning ? "Blocked · missing predecessor" : "Blocked")
+            : string.Empty;
+        if (!string.IsNullOrWhiteSpace(detail) && isBlocked)
+        {
+            BlockedText = detail;
+        }
+
+        MetaText = BuildMeta();
+    }
+
     public void ApplyTimer(bool isRunning, string? timeText)
     {
         IsTimerRunning = isRunning;
@@ -153,6 +177,11 @@ public partial class TaskRowViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(DeadlineText))
         {
             parts.Add(IsOverdue ? $"Overdue · {DeadlineText}" : DeadlineText);
+        }
+
+        if (IsBlocked)
+        {
+            parts.Add(string.IsNullOrWhiteSpace(BlockedText) ? "Blocked" : BlockedText);
         }
 
         if (IsWaiting)

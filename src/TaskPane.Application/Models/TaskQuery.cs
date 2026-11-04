@@ -13,6 +13,13 @@ public sealed class TaskQuery
     public bool OnlySleeping { get; init; }
     public bool OnlyWaiting { get; init; }
     public bool IncludeCompleted { get; init; }
+
+    /// <summary>When true, only show tasks that are currently blocked by required predecessors.</summary>
+    public bool OnlyBlocked { get; init; }
+
+    /// <summary>When true, hide blocked tasks from the list.</summary>
+    public bool HideBlocked { get; init; }
+
     public TaskSortMode SortMode { get; init; } = TaskSortMode.Manual;
 
     /// <summary>When true, hide sleeping roots and children hidden by parent sleep (overlay mode).</summary>

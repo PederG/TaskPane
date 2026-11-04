@@ -19,6 +19,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMigration, Migration001_InitialSchema>();
         services.AddSingleton<IMigration, Migration002_Phase2RichEditing>();
         services.AddSingleton<IMigration, Migration003_Phase3TimeTracking>();
+        services.AddSingleton<IMigration, Migration004_Phase4DependenciesHistory>();
         services.AddSingleton<SqliteMigrator>();
         services.AddSingleton<SqliteUnitOfWork>();
         services.AddSingleton<IUnitOfWork>(sp => sp.GetRequiredService<SqliteUnitOfWork>());
@@ -27,6 +28,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITagRepository, SqliteTagRepository>();
         services.AddSingleton<ISettingsRepository, SqliteSettingsRepository>();
         services.AddSingleton<ITimeSessionRepository, SqliteTimeSessionRepository>();
+        services.AddSingleton<IDependencyRepository, SqliteDependencyRepository>();
+        services.AddSingleton<IAuditRepository, SqliteAuditRepository>();
         services.AddSingleton<IClock, SystemClock>();
         services.TryAddSingleton<IWorkstationActivityMonitor, NullWorkstationActivityMonitor>();
         return services;

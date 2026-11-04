@@ -25,4 +25,11 @@ public static class ValidationCodes
     public const string SessionOverlap = "session_overlap";
     public const string InvalidSessionRange = "invalid_session_range";
     public const string IdleThresholdInvalid = "idle_threshold_invalid";
+    public const string DependencySelfEdge = "dependency_self_edge";
+    public const string DependencyCycle = "dependency_cycle";
+    public const string DependencyDuplicate = "dependency_duplicate";
+    public const string DependencyNotFound = "dependency_not_found";
+    public const string AuditNotFound = "audit_not_found";
+    public const string UndoNotSupported = "undo_not_supported";
+    public const string UndoAlreadyApplied = "undo_already_applied";
 }

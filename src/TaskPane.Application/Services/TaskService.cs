@@ -19,6 +19,7 @@ public sealed class TaskService
     private readonly IUnitOfWork _unitOfWork;
     private readonly FocusService _focus;
     private readonly TimeTrackingService _timeTracking;
+    private readonly HistoryService _history;
     private readonly ILogger<TaskService> _logger;
 
     public TaskService(
@@ -28,6 +29,7 @@ public sealed class TaskService
         IUnitOfWork unitOfWork,
         FocusService focus,
         TimeTrackingService timeTracking,
+        HistoryService history,
         ILogger<TaskService> logger)
     {
         _tasks = tasks;
@@ -36,6 +38,7 @@ public sealed class TaskService
         _unitOfWork = unitOfWork;
         _focus = focus;
         _timeTracking = timeTracking;
+        _history = history;
         _logger = logger;
     }
 
@@ -161,6 +164,7 @@ public sealed class TaskService
             throw new BusinessException(ValidationCodes.InvalidSleep, "Custom sleep must be in the future.");
         }
 
+        var before = HistoryService.TaskSnapshot.From(task);
         var until = SleepEvaluator.ResolveWakeUtc(request.Preset, now, TimeZoneInfo.Local, request.CustomUntilUtc);
         task.SleepIndefinitely = request.Preset == SleepPreset.Indefinitely;
         task.SleepUntilUtc = task.SleepIndefinitely ? null : until;
@@ -172,6 +176,7 @@ public sealed class TaskService
             await _timeTracking.EndActiveForTaskAsync(task.Id, SessionEndReason.Slept, ct)
                 .ConfigureAwait(false);
             await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
+            await _history.RecordSleptAsync(before, task, ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("Slept task {TaskId} preset={Preset}", task.Id, request.Preset);
@@ -265,6 +270,7 @@ public sealed class TaskService
 
         var applied = choice ?? ParentCompletionChoice.CompleteParentOnly;
         var now = DateTimeOffset.UtcNow;
+        var completedChildren = new List<HistoryService.TaskSnapshot>();
 
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
@@ -279,6 +285,7 @@ public sealed class TaskService
                     child.UpdatedUtc = now;
                     child.Revision++;
                     await _tasks.UpdateAsync(child, ct).ConfigureAwait(false);
+                    completedChildren.Add(HistoryService.TaskSnapshot.From(child));
                 }
             }
 
@@ -289,6 +296,7 @@ public sealed class TaskService
             task.UpdatedUtc = now;
             task.Revision++;
             await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
+            await _history.RecordCompletedAsync(task, completedChildren, applied, ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
         return new CompleteTaskResult
@@ -321,14 +329,17 @@ public sealed class TaskService
         var task = await RequireAsync(id, cancellationToken).ConfigureAwait(false);
         var batchId = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
-        var ids = new List<TaskId> { task.Id };
+        var toDelete = new List<TaskItem> { task };
 
         if (task.IsRoot)
         {
             var children = await _tasks.ListChildrenAsync(task.Id, includeDeleted: false, cancellationToken)
                 .ConfigureAwait(false);
-            ids.AddRange(children.Select(c => c.Id));
+            toDelete.AddRange(children);
         }
+
+        var ids = toDelete.Select(t => t.Id).ToList();
+        var snapshots = toDelete.Select(HistoryService.TaskSnapshot.From).ToList();
 
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
@@ -338,7 +349,9 @@ public sealed class TaskService
                     .ConfigureAwait(false);
             }
 
+            // Soft-delete never removes dependency edges; links remain restorable with a warning.
             await _tasks.SoftDeleteBatchAsync(ids, batchId, now, ct).ConfigureAwait(false);
+            await _history.RecordSoftDeletedAsync(snapshots, batchId, ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("Soft-deleted {Count} task(s) in batch {BatchId}", ids.Count, batchId);
@@ -355,6 +368,28 @@ public sealed class TaskService
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
             await _tasks.RestoreBatchAsync(deletionBatchId, ct).ConfigureAwait(false);
+
+            // Safe handling of missing parents: promote orphans to roots rather than failing.
+            foreach (var item in items)
+            {
+                var restored = await _tasks.GetByIdAsync(item.Id, ct).ConfigureAwait(false);
+                if (restored?.ParentTaskId is not { } parentId)
+                {
+                    continue;
+                }
+
+                var parent = await _tasks.GetByIdAsync(parentId, ct).ConfigureAwait(false);
+                if (parent is null)
+                {
+                    restored.ParentTaskId = null;
+                    restored.UpdatedUtc = DateTimeOffset.UtcNow;
+                    restored.Revision++;
+                    await _tasks.UpdateAsync(restored, ct).ConfigureAwait(false);
+                    _logger.LogInformation(
+                        "Restored task {TaskId} promoted to root because parent was missing",
+                        restored.Id);
+                }
+            }
         }, cancellationToken).ConfigureAwait(false);
     }
 
@@ -435,6 +470,7 @@ public sealed class TaskService
         CancellationToken cancellationToken = default)
     {
         var task = await RequireAsync(id, cancellationToken).ConfigureAwait(false);
+        var before = HistoryService.TaskSnapshot.From(task);
         TaskItem? newParent = null;
         if (newParentId is { } pid)
         {
@@ -460,6 +496,7 @@ public sealed class TaskService
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
             await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
+            await _history.RecordMovedAsync(before, task, ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
 
