@@ -39,4 +39,14 @@ public interface ITaskRepository
         TaskId? parentId,
         FocusBucket? focusBucket,
         CancellationToken cancellationToken = default);
+
+    Task<TaskItem?> FindByOccurrenceKeyAsync(
+        RecurrenceTemplateId templateId,
+        string occurrenceKey,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TaskItem>> ListByRecurrenceTemplateAsync(
+        RecurrenceTemplateId templateId,
+        bool includeDeleted = false,
+        CancellationToken cancellationToken = default);
 }

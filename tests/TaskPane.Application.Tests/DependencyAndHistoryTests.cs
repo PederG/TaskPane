@@ -221,6 +221,12 @@ public sealed class DependencyAndHistoryTests
             uow,
             history,
             NullLogger<DependencyService>.Instance);
+        var recurrence = new RecurrenceService(
+            new InMemoryRecurrenceTemplateRepository(),
+            tasks,
+            uow,
+            clock,
+            NullLogger<RecurrenceService>.Instance);
         var taskService = new TaskService(
             tasks,
             tags,
@@ -229,6 +235,7 @@ public sealed class DependencyAndHistoryTests
             focus,
             time,
             history,
+            recurrence,
             NullLogger<TaskService>.Instance);
         return new Harness(taskService, dependencies, history, time, deps);
     }
@@ -405,7 +412,25 @@ public sealed class DependencyAndHistoryTests
             return Task.FromResult(max + 1000);
         }
 
+        public Task<TaskItem?> FindByOccurrenceKeyAsync(
+            RecurrenceTemplateId templateId,
+            string occurrenceKey,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(Items.FirstOrDefault(t =>
+                t.RecurrenceTemplateId.Equals(templateId)
+                && string.Equals(t.OccurrenceKey, occurrenceKey, StringComparison.Ordinal)));
+
+        public Task<IReadOnlyList<TaskItem>> ListByRecurrenceTemplateAsync(
+            RecurrenceTemplateId templateId,
+            bool includeDeleted = false,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<TaskItem>>(
+                Items.Where(t =>
+                    t.RecurrenceTemplateId.Equals(templateId)
+                    && (includeDeleted || !t.IsDeleted)).ToList());
+
         private static TaskItem Clone(TaskItem task) => new()
+
         {
             Id = task.Id,
             ParentTaskId = task.ParentTaskId,
@@ -423,6 +448,8 @@ public sealed class DependencyAndHistoryTests
             WaitingFor = task.WaitingFor,
             WaitingFollowUpUtc = task.WaitingFollowUpUtc,
             ProjectId = task.ProjectId,
+            RecurrenceTemplateId = task.RecurrenceTemplateId,
+            OccurrenceKey = task.OccurrenceKey,
             CreatedUtc = task.CreatedUtc,
             UpdatedUtc = task.UpdatedUtc,
             CompletedUtc = task.CompletedUtc,
@@ -617,5 +644,32 @@ public sealed class DependencyAndHistoryTests
             CorrelationId = e.CorrelationId,
             IsUndone = e.IsUndone
         };
+    }
+
+    private sealed class InMemoryRecurrenceTemplateRepository : IRecurrenceTemplateRepository
+    {
+        private readonly List<RecurrenceTemplate> _items = [];
+
+        public Task<RecurrenceTemplate?> GetByIdAsync(RecurrenceTemplateId id, CancellationToken cancellationToken = default)
+            => Task.FromResult(_items.FirstOrDefault(t => t.Id.Equals(id)));
+
+        public Task<IReadOnlyList<RecurrenceTemplate>> ListEnabledAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<RecurrenceTemplate>>(_items.Where(t => t.IsEnabled).ToList());
+
+        public Task InsertAsync(RecurrenceTemplate template, CancellationToken cancellationToken = default)
+        {
+            _items.Add(template);
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateAsync(RecurrenceTemplate template, CancellationToken cancellationToken = default)
+        {
+            var idx = _items.FindIndex(t => t.Id.Equals(template.Id));
+            if (idx >= 0)
+            {
+                _items[idx] = template;
+            }
+            return Task.CompletedTask;
+        }
     }
 }

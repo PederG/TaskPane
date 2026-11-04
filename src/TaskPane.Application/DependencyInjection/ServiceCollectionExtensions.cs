@@ -13,6 +13,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<TimeTrackingService>();
         services.AddSingleton<HistoryService>();
         services.AddSingleton<DependencyService>();
+        services.AddSingleton<RecurrenceService>();
+        services.AddSingleton<ReminderService>();
         services.AddSingleton<TaskService>();
         services.AddSingleton<OverlaySettingsService>();
         return services;

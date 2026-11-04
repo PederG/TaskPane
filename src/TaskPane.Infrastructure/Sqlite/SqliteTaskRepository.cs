@@ -105,11 +105,13 @@ public sealed class SqliteTaskRepository : ITaskRepository
                     Id, ParentTaskId, Title, Notes, Priority, FocusBucket, Status,
                     ManualSortKey, DeadlineLocalDate, DeadlineLocalTime, DeadlineTimeZoneId,
                     SleepUntilUtc, SleepIndefinitely, WaitingFor, WaitingFollowUpUtc, ProjectId,
+                    RecurrenceTemplateId, OccurrenceKey,
                     CreatedUtc, UpdatedUtc, CompletedUtc, DeletedUtc, DeletionBatchId, Revision)
                 VALUES (
                     $id, $parent, $title, $notes, $priority, $focus, $status,
                     $sort, $deadlineDate, $deadlineTime, $deadlineTz,
                     $sleepUntil, $sleepIndef, $waitingFor, $waitingFollowUp, $project,
+                    $recurrence, $occurrence,
                     $created, $updated, $completed, $deleted, $batch, $rev);
                 """;
             Bind(cmd, task);
@@ -149,6 +151,8 @@ public sealed class SqliteTaskRepository : ITaskRepository
                     WaitingFor = $waitingFor,
                     WaitingFollowUpUtc = $waitingFollowUp,
                     ProjectId = $project,
+                    RecurrenceTemplateId = $recurrence,
+                    OccurrenceKey = $occurrence,
                     CreatedUtc = $created,
                     UpdatedUtc = $updated,
                     CompletedUtc = $completed,
@@ -308,6 +312,67 @@ public sealed class SqliteTaskRepository : ITaskRepository
         }
     }
 
+    public async Task<TaskItem?> FindByOccurrenceKeyAsync(
+        RecurrenceTemplateId templateId,
+        string occurrenceKey,
+        CancellationToken cancellationToken = default)
+    {
+        var connection = await _unitOfWork.GetConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var owns = _unitOfWork.OwnsConnection(connection);
+        try
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.Transaction = _unitOfWork.AmbientTransaction;
+            cmd.CommandText = """
+                SELECT * FROM Tasks
+                WHERE RecurrenceTemplateId = $t AND OccurrenceKey = $k
+                LIMIT 1;
+                """;
+            cmd.Parameters.AddWithValue("$t", templateId.ToString());
+            cmd.Parameters.AddWithValue("$k", occurrenceKey);
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            return Map(reader);
+        }
+        finally
+        {
+            if (owns)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    public async Task<IReadOnlyList<TaskItem>> ListByRecurrenceTemplateAsync(
+        RecurrenceTemplateId templateId,
+        bool includeDeleted = false,
+        CancellationToken cancellationToken = default)
+    {
+        var connection = await _unitOfWork.GetConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var owns = _unitOfWork.OwnsConnection(connection);
+        try
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.Transaction = _unitOfWork.AmbientTransaction;
+            cmd.CommandText = includeDeleted
+                ? "SELECT * FROM Tasks WHERE RecurrenceTemplateId = $t;"
+                : "SELECT * FROM Tasks WHERE RecurrenceTemplateId = $t AND DeletedUtc IS NULL;";
+            cmd.Parameters.AddWithValue("$t", templateId.ToString());
+            return await ReadAllAsync(cmd, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (owns)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
     private static async Task<IReadOnlyList<TaskItem>> ReadAllAsync(
         SqliteCommand cmd,
         CancellationToken cancellationToken)
@@ -340,6 +405,8 @@ public sealed class SqliteTaskRepository : ITaskRepository
         cmd.Parameters.AddWithValue("$waitingFor", (object?)task.WaitingFor ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$waitingFollowUp", (object?)task.WaitingFollowUpUtc?.ToString("O") ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$project", (object?)task.ProjectId?.ToString() ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$recurrence", (object?)task.RecurrenceTemplateId?.ToString() ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$occurrence", (object?)task.OccurrenceKey ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$created", task.CreatedUtc.ToString("O"));
         cmd.Parameters.AddWithValue("$updated", task.UpdatedUtc.ToString("O"));
         cmd.Parameters.AddWithValue("$completed", (object?)task.CompletedUtc?.ToString("O") ?? DBNull.Value);
@@ -378,6 +445,12 @@ public sealed class SqliteTaskRepository : ITaskRepository
         string? project = HasColumn(reader, "ProjectId") && reader["ProjectId"] is not DBNull
             ? Convert.ToString(reader["ProjectId"])
             : null;
+        string? recurrence = HasColumn(reader, "RecurrenceTemplateId") && reader["RecurrenceTemplateId"] is not DBNull
+            ? Convert.ToString(reader["RecurrenceTemplateId"])
+            : null;
+        string? occurrence = HasColumn(reader, "OccurrenceKey") && reader["OccurrenceKey"] is not DBNull
+            ? Convert.ToString(reader["OccurrenceKey"])
+            : null;
 
         return new TaskItem
         {
@@ -397,6 +470,8 @@ public sealed class SqliteTaskRepository : ITaskRepository
             WaitingFor = waitingFor,
             WaitingFollowUpUtc = waitingFollowUp is null ? null : DateTimeOffset.Parse(waitingFollowUp),
             ProjectId = project is null ? null : ProjectId.Parse(project),
+            RecurrenceTemplateId = recurrence is null ? null : RecurrenceTemplateId.Parse(recurrence),
+            OccurrenceKey = occurrence,
             CreatedUtc = DateTimeOffset.Parse(Convert.ToString(reader["CreatedUtc"])!),
             UpdatedUtc = DateTimeOffset.Parse(Convert.ToString(reader["UpdatedUtc"])!),
             CompletedUtc = completed is null ? null : DateTimeOffset.Parse(completed),

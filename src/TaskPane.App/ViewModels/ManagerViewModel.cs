@@ -6,7 +6,9 @@ using TaskPane.Application.Services;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 using TaskPane.Core.Ids;
+using TaskPane.Core.Recurrence;
 using TaskPane.Core.Time;
+using ReminderSettings = TaskPane.Core.Entities.ReminderSettings;
 using AuditAction = TaskPane.Core.Enums.AuditAction;
 
 namespace TaskPane.App.ViewModels;
@@ -19,6 +21,8 @@ public partial class ManagerViewModel : ObservableObject
     private readonly TimeTrackingService _timeTracking;
     private readonly DependencyService _dependencies;
     private readonly HistoryService _history;
+    private readonly RecurrenceService _recurrence;
+    private readonly ReminderService _reminders;
 
     public ManagerViewModel(
         TaskService taskService,
@@ -26,7 +30,9 @@ public partial class ManagerViewModel : ObservableObject
         HotkeySettingsService hotkeySettings,
         TimeTrackingService timeTracking,
         DependencyService dependencies,
-        HistoryService history)
+        HistoryService history,
+        RecurrenceService recurrence,
+        ReminderService reminders)
     {
         _taskService = taskService;
         _organization = organization;
@@ -34,6 +40,8 @@ public partial class ManagerViewModel : ObservableObject
         _timeTracking = timeTracking;
         _dependencies = dependencies;
         _history = history;
+        _recurrence = recurrence;
+        _reminders = reminders;
     }
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = [];
@@ -159,6 +167,39 @@ public partial class ManagerViewModel : ObservableObject
     [ObservableProperty]
     private string _statusMessage = string.Empty;
 
+    [ObservableProperty]
+    private RecurrenceFrequency _recurrenceFrequency = RecurrenceFrequency.Daily;
+
+    [ObservableProperty]
+    private int _recurrenceInterval = 1;
+
+    [ObservableProperty]
+    private string _recurrenceWeekdays = "1,2,3,4,5";
+
+    [ObservableProperty]
+    private int _recurrenceDayOfMonth = 1;
+
+    [ObservableProperty]
+    private string _recurrenceAnchorDate = string.Empty;
+
+    [ObservableProperty]
+    private string _recurrenceSummary = string.Empty;
+
+    [ObservableProperty]
+    private string _reminderDueLocal = string.Empty;
+
+    [ObservableProperty]
+    private string _reminderSummary = string.Empty;
+
+    [ObservableProperty]
+    private bool _quietHoursEnabled = true;
+
+    [ObservableProperty]
+    private string _quietStartLocal = "22:00";
+
+    [ObservableProperty]
+    private string _quietEndLocal = "07:00";
+
     public event Action? ReturnToOverlayRequested;
     public event Action? IdleThresholdChanged;
 
@@ -170,6 +211,10 @@ public partial class ManagerViewModel : ObservableObject
         HotkeyEnabled = hotkey.Enabled;
         var timeSettings = await _timeTracking.GetSettingsAsync(cancellationToken).ConfigureAwait(true);
         IdleThresholdMinutes = timeSettings.IdleThresholdMinutes;
+        var reminderSettings = await _reminders.GetSettingsAsync(cancellationToken).ConfigureAwait(true);
+        QuietHoursEnabled = reminderSettings.QuietHoursEnabled;
+        QuietStartLocal = reminderSettings.QuietStartLocal;
+        QuietEndLocal = reminderSettings.QuietEndLocal;
         await RefreshAsync(cancellationToken).ConfigureAwait(true);
         await RefreshReportAsync(cancellationToken).ConfigureAwait(true);
     }
@@ -385,9 +430,40 @@ public partial class ManagerViewModel : ObservableObject
         EditWaitingFollowUp = value.WaitingFollowUpUtc?.ToString("u") ?? string.Empty;
         EditProject = Projects.FirstOrDefault(p => value.ProjectId is { } pid && p.Id.Equals(pid));
         EditTagsCsv = value.TagsText;
+        RecurrenceAnchorDate = string.IsNullOrWhiteSpace(RecurrenceAnchorDate)
+            ? DateTime.Now.ToString("yyyy-MM-dd")
+            : RecurrenceAnchorDate;
+        ReminderDueLocal = DateTime.Now.AddHours(1).ToString("yyyy-MM-dd HH:mm");
         _ = LoadSelectedTagsAsync(value.Id);
         _ = LoadSessionsAsync(value.Id);
         _ = LoadDependenciesAsync(value.Id);
+        _ = LoadRecurrenceAndRemindersAsync(value.Id);
+    }
+
+    private async Task LoadRecurrenceAndRemindersAsync(TaskId taskId)
+    {
+        var task = await _taskService.GetAsync(taskId).ConfigureAwait(true);
+        if (task?.RecurrenceTemplateId is { } templateId)
+        {
+            var template = await _recurrence.GetTemplateAsync(templateId).ConfigureAwait(true);
+            var rule = template is null ? null : _recurrence.ParseRule(template);
+            RecurrenceSummary = rule is null
+                ? $"Occurrence {task.OccurrenceKey}"
+                : $"{rule.Frequency} every {rule.Interval} · key {task.OccurrenceKey}";
+        }
+        else
+        {
+            RecurrenceSummary = "No recurrence";
+        }
+
+        var reminders = await _reminders.ListForTaskAsync(taskId).ConfigureAwait(true);
+        ReminderSummary = reminders.Count == 0
+            ? "No reminders"
+            : string.Join("; ", reminders.Select(r =>
+            {
+                var state = r.IsDismissed ? "dismissed" : r.IsDelivered ? "delivered" : "pending";
+                return $"{r.DueUtc:u} ({state})";
+            }));
     }
 
     private async Task LoadDependenciesAsync(TaskId taskId)
@@ -1046,6 +1122,139 @@ public partial class ManagerViewModel : ObservableObject
         await LoadSessionsAsync(SelectedTask.Id).ConfigureAwait(true);
         await RefreshAsync().ConfigureAwait(true);
         await RefreshReportAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private async Task AttachRecurrenceAsync()
+    {
+        if (SelectedTask is null)
+        {
+            return;
+        }
+
+        var anchor = string.IsNullOrWhiteSpace(RecurrenceAnchorDate)
+            ? DateTime.Now.ToString("yyyy-MM-dd")
+            : RecurrenceAnchorDate.Trim();
+
+        var rule = new RecurrenceRule
+        {
+            Frequency = RecurrenceFrequency,
+            Interval = Math.Max(1, RecurrenceInterval),
+            AnchorLocalDate = anchor,
+            DayOfMonth = RecurrenceDayOfMonth,
+            Weekdays = ParseWeekdays(RecurrenceWeekdays)
+        };
+
+        if (RecurrenceFrequency == RecurrenceFrequency.Monthly)
+        {
+            rule.MonthlyMode = MonthlyRecurrenceMode.DayOfMonth;
+        }
+
+        try
+        {
+            await _recurrence.AttachAsync(new AttachRecurrenceRequest
+            {
+                TaskId = SelectedTask.Id,
+                Rule = rule,
+                TimeZoneId = TimeZoneInfo.Local.Id,
+                ConvertSourceToFirstOccurrence = true
+            }).ConfigureAwait(true);
+            StatusMessage = "Recurrence attached.";
+            await RefreshAsync().ConfigureAwait(true);
+            if (SelectedTask is not null)
+            {
+                await LoadRecurrenceAndRemindersAsync(SelectedTask.Id).ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DetachThisOccurrenceAsync()
+    {
+        if (SelectedTask is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _recurrence.EditOccurrenceAsync(new EditOccurrenceRequest
+            {
+                TaskId = SelectedTask.Id,
+                Scope = OccurrenceEditScope.ThisOccurrenceOnly
+            }).ConfigureAwait(true);
+            StatusMessage = "Edited this occurrence only.";
+            await RefreshAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ScheduleReminderAsync()
+    {
+        if (SelectedTask is null)
+        {
+            return;
+        }
+
+        if (!DateTime.TryParse(ReminderDueLocal, out var local))
+        {
+            StatusMessage = "Reminder due must be a local date/time.";
+            return;
+        }
+
+        var due = new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local)).ToUniversalTime();
+        try
+        {
+            await _reminders.ScheduleAsync(SelectedTask.Id, due).ConfigureAwait(true);
+            StatusMessage = "Reminder scheduled.";
+            await LoadRecurrenceAndRemindersAsync(SelectedTask.Id).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task SaveQuietHoursAsync()
+    {
+        try
+        {
+            await _reminders.SaveSettingsAsync(new ReminderSettings
+            {
+                QuietHoursEnabled = QuietHoursEnabled,
+                QuietStartLocal = QuietStartLocal.Trim(),
+                QuietEndLocal = QuietEndLocal.Trim()
+            }).ConfigureAwait(true);
+            StatusMessage = "Quiet hours saved.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    private static int[]? ParseWeekdays(string csv)
+    {
+        var parts = csv.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var days = new List<int>();
+        foreach (var part in parts)
+        {
+            if (int.TryParse(part, out var d) && d is >= 0 and <= 6)
+            {
+                days.Add(d);
+            }
+        }
+
+        return days.Count == 0 ? null : days.Distinct().ToArray();
     }
 
     public async Task DropMoveToParentAsync(TaskRowViewModel source, TaskRowViewModel newParent)

@@ -110,6 +110,10 @@ public partial class TaskRowViewModel : ObservableObject
 
     public ProjectId? ProjectId { get; private set; }
 
+    public string? OccurrenceKey { get; private set; }
+
+    public bool IsRecurring { get; private set; }
+
     public void Apply(
         TaskItem task,
         SubtaskProgress? progress = null,
@@ -133,6 +137,8 @@ public partial class TaskRowViewModel : ObservableObject
         WaitingFor = task.WaitingFor;
         WaitingFollowUpUtc = task.WaitingFollowUpUtc;
         ProjectId = task.ProjectId;
+        OccurrenceKey = task.OccurrenceKey;
+        IsRecurring = task.IsRecurringOccurrence;
         IsOverdue = DeadlineEvaluator.IsOverdue(task, now);
         IsSleeping = SleepEvaluator.IsCurrentlySleeping(task, now);
         IsWaiting = task.IsWaiting;
@@ -192,6 +198,11 @@ public partial class TaskRowViewModel : ObservableObject
         if (IsSleeping)
         {
             parts.Add("Sleeping");
+        }
+
+        if (IsRecurring)
+        {
+            parts.Add(string.IsNullOrWhiteSpace(OccurrenceKey) ? "Recurring" : $"Recurring · {OccurrenceKey}");
         }
 
         if (!string.IsNullOrWhiteSpace(TagsText))
