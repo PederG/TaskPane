@@ -1,8 +1,0 @@
----
-description: TaskPane engineering and product guardrails
-alwaysApply: true
----
-
-Follow @AGENTS.md. Before coding, read @docs/SPEC.md, @docs/ARCHITECTURE.md, @docs/DATA_MODEL.md, @docs/UX.md, @docs/TASKS.md and @docs/TEST_PLAN.md.
-
-Implement only the requested development phase. Preserve the compact overlay-first UX, local-first SQLite, one-level subtasks, soft deletion and independent priority/deadline/focus fields. Never introduce a network sync dependency in v1. Add tests for every changed business rule. Explain what was actually built and tested.

@@ -9,7 +9,8 @@ TestResults/
 coverage/
 artifacts/
 .vscode/
-.cursor/index/
+.cursor/
+.github/
 
 # Local app data / databases / exports (never commit task content)
 *.db
