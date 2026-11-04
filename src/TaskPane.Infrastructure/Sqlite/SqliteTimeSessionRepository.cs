@@ -142,6 +142,39 @@ public sealed class SqliteTimeSessionRepository : ITimeSessionRepository
         }
     }
 
+    public async Task<IReadOnlyList<TimeSession>> ListAllAsync(
+        bool includeDiscarded = true,
+        CancellationToken cancellationToken = default)
+    {
+        var connection = await _unitOfWork.GetConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var owns = _unitOfWork.OwnsConnection(connection);
+        try
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.Transaction = _unitOfWork.AmbientTransaction;
+            cmd.CommandText = includeDiscarded
+                ? """
+                    SELECT Id, TaskId, StartedUtc, EndedUtc, EndReason, IsDiscarded, OpenSlot, CreatedUtc, UpdatedUtc
+                    FROM TimeSessions
+                    ORDER BY StartedUtc ASC;
+                    """
+                : """
+                    SELECT Id, TaskId, StartedUtc, EndedUtc, EndReason, IsDiscarded, OpenSlot, CreatedUtc, UpdatedUtc
+                    FROM TimeSessions
+                    WHERE IsDiscarded = 0
+                    ORDER BY StartedUtc ASC;
+                    """;
+            return await ReadAllAsync(cmd, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (owns)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
     public async Task InsertAsync(TimeSession session, CancellationToken cancellationToken = default)
     {
         var connection = await _unitOfWork.GetConnectionAsync(cancellationToken).ConfigureAwait(false);

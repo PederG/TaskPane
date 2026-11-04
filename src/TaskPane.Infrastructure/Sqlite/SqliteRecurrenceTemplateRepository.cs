@@ -71,6 +71,34 @@ public sealed class SqliteRecurrenceTemplateRepository : IRecurrenceTemplateRepo
         }
     }
 
+    public async Task<IReadOnlyList<RecurrenceTemplate>> ListAllAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var connection = await _unitOfWork.GetConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var owns = _unitOfWork.OwnsConnection(connection);
+        try
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.Transaction = _unitOfWork.AmbientTransaction;
+            cmd.CommandText = "SELECT * FROM RecurrenceTemplates;";
+            var list = new List<RecurrenceTemplate>();
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                list.Add(Map(reader));
+            }
+
+            return list;
+        }
+        finally
+        {
+            if (owns)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
     public async Task InsertAsync(RecurrenceTemplate template, CancellationToken cancellationToken = default)
     {
         var connection = await _unitOfWork.GetConnectionAsync(cancellationToken).ConfigureAwait(false);

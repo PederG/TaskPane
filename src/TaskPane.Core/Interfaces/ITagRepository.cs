@@ -27,4 +27,7 @@ public interface ITagRepository
     Task<IReadOnlyDictionary<TaskId, IReadOnlyList<TagId>>> GetTagIdsForTasksAsync(
         IReadOnlyList<TaskId> taskIds,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<(TaskId TaskId, TagId TagId)>> ListAllTaskTagsAsync(
+        CancellationToken cancellationToken = default);
 }

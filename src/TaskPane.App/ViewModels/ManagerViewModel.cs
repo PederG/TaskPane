@@ -23,6 +23,8 @@ public partial class ManagerViewModel : ObservableObject
     private readonly HistoryService _history;
     private readonly RecurrenceService _recurrence;
     private readonly ReminderService _reminders;
+    private readonly BackupService _backups;
+    private readonly TransferService _transfer;
 
     public ManagerViewModel(
         TaskService taskService,
@@ -32,7 +34,9 @@ public partial class ManagerViewModel : ObservableObject
         DependencyService dependencies,
         HistoryService history,
         RecurrenceService recurrence,
-        ReminderService reminders)
+        ReminderService reminders,
+        BackupService backups,
+        TransferService transfer)
     {
         _taskService = taskService;
         _organization = organization;
@@ -42,6 +46,8 @@ public partial class ManagerViewModel : ObservableObject
         _history = history;
         _recurrence = recurrence;
         _reminders = reminders;
+        _backups = backups;
+        _transfer = transfer;
     }
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = [];
@@ -200,6 +206,15 @@ public partial class ManagerViewModel : ObservableObject
     [ObservableProperty]
     private string _quietEndLocal = "07:00";
 
+    [ObservableProperty]
+    private string _backupStatusText = "Backup status unknown.";
+
+    [ObservableProperty]
+    private string _importPreviewText = string.Empty;
+
+    [ObservableProperty]
+    private ImportMode _selectedImportMode = ImportMode.MergeByIdSkipConflicts;
+
     public event Action? ReturnToOverlayRequested;
     public event Action? IdleThresholdChanged;
 
@@ -215,8 +230,15 @@ public partial class ManagerViewModel : ObservableObject
         QuietHoursEnabled = reminderSettings.QuietHoursEnabled;
         QuietStartLocal = reminderSettings.QuietStartLocal;
         QuietEndLocal = reminderSettings.QuietEndLocal;
+        await RefreshBackupStatusAsync(cancellationToken).ConfigureAwait(true);
         await RefreshAsync(cancellationToken).ConfigureAwait(true);
         await RefreshReportAsync(cancellationToken).ConfigureAwait(true);
+    }
+
+    public async Task RefreshBackupStatusAsync(CancellationToken cancellationToken = default)
+    {
+        var status = await _backups.GetStatusAsync(cancellationToken).ConfigureAwait(true);
+        BackupStatusText = status.StatusText;
     }
 
     private async Task LoadCatalogAsync(CancellationToken cancellationToken)
@@ -1240,6 +1262,181 @@ public partial class ManagerViewModel : ObservableObject
         {
             StatusMessage = ex.Message;
         }
+    }
+
+    [RelayCommand]
+    private async Task BackupNowAsync()
+    {
+        try
+        {
+            var result = await _backups.CreateBackupAsync("manual").ConfigureAwait(true);
+            StatusMessage = result.Message;
+            await RefreshBackupStatusAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ExportJsonAsync()
+    {
+        try
+        {
+            var path = await _transfer.ExportJsonToFileAsync().ConfigureAwait(true);
+            StatusMessage = $"JSON export saved: {path}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ExportMarkdownAsync()
+    {
+        try
+        {
+            var path = await _transfer.ExportMarkdownToFileAsync().ConfigureAwait(true);
+            StatusMessage = $"Markdown export saved (not lossless): {path}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task PreviewImportAsync()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "TaskPane JSON (*.json)|*.json|All files (*.*)|*.*",
+            Title = "Preview TaskPane JSON import"
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var preview = await _transfer.PreviewImportFileAsync(dialog.FileName).ConfigureAwait(true);
+            ImportPreviewText =
+                $"Tasks {preview.TaskCount} (subtasks {preview.SubtaskCount}, deleted {preview.DeletedTaskCount}); " +
+                $"deps {preview.DependencyCount}; sessions {preview.SessionCount}; " +
+                $"projects {preview.ProjectCount}; tags {preview.TagCount}; " +
+                $"recurrence {preview.RecurrenceTemplateCount}; reminders {preview.ReminderCount}. " +
+                (preview.IsValid ? "Valid." : "INVALID: " + string.Join(" ", preview.Errors)) +
+                (preview.Warnings.Count == 0 ? "" : " Warnings: " + string.Join(" ", preview.Warnings));
+            StatusMessage = preview.IsValid ? "Import preview ready." : "Import preview found errors.";
+        }
+        catch (Exception ex)
+        {
+            ImportPreviewText = ex.Message;
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ImportJsonAsync()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "TaskPane JSON (*.json)|*.json|All files (*.*)|*.*",
+            Title = "Import TaskPane JSON"
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var preview = await _transfer.PreviewImportFileAsync(dialog.FileName).ConfigureAwait(true);
+            if (!preview.IsValid)
+            {
+                StatusMessage = "Import blocked: " + string.Join(" ", preview.Errors);
+                ImportPreviewText = StatusMessage;
+                return;
+            }
+
+            var confirm = System.Windows.MessageBox.Show(
+                $"Import {preview.TaskCount} tasks using mode {SelectedImportMode}?\n\n" +
+                "A safety backup will be created first. Invalid imports cannot corrupt the database.",
+                "Confirm import",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Question);
+            if (confirm != System.Windows.MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            var result = await _transfer.ImportJsonFileAsync(
+                dialog.FileName,
+                SelectedImportMode,
+                dryRun: false).ConfigureAwait(true);
+            StatusMessage =
+                $"Imported tasks {result.ImportedTasks} (skipped {result.SkippedTasks}). Safety backup: {result.SafetyBackupPath}";
+            ImportPreviewText = StatusMessage;
+            await LoadCatalogAsync(CancellationToken.None).ConfigureAwait(true);
+            await RefreshAsync().ConfigureAwait(true);
+            await RefreshBackupStatusAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task RestoreBackupAsync()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "SQLite backup (*.db)|*.db|All files (*.*)|*.*",
+            Title = "Restore TaskPane backup"
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        var confirm = System.Windows.MessageBox.Show(
+            "Restore this backup into the live database?\n\n" +
+            "A safety backup of the current database is created first.\n" +
+            _backups.GetRecoveryInstructions(),
+            "Confirm restore",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning);
+        if (confirm != System.Windows.MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            await _backups.RestoreFromBackupAsync(dialog.FileName).ConfigureAwait(true);
+            StatusMessage = "Backup restored into live database.";
+            await LoadCatalogAsync(CancellationToken.None).ConfigureAwait(true);
+            await RefreshAsync().ConfigureAwait(true);
+            await RefreshBackupStatusAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private void ShowRecoveryHelp()
+    {
+        System.Windows.MessageBox.Show(
+            _backups.GetRecoveryInstructions(),
+            "Backup recovery",
+            System.Windows.MessageBoxButton.OK,
+            System.Windows.MessageBoxImage.Information);
     }
 
     private static int[]? ParseWeekdays(string csv)

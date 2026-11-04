@@ -195,6 +195,29 @@ public sealed class SqliteAuditRepository : IAuditRepository
         }
     }
 
+    public async Task<IReadOnlyList<AuditEvent>> ListAllAsync(CancellationToken cancellationToken = default)
+    {
+        var connection = await _unitOfWork.GetConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var owns = _unitOfWork.OwnsConnection(connection);
+        try
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.Transaction = _unitOfWork.AmbientTransaction;
+            cmd.CommandText = """
+                SELECT * FROM AuditEvents
+                ORDER BY TimestampUtc ASC;
+                """;
+            return await ReadAllAsync(cmd, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (owns)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
     private static void Bind(SqliteCommand cmd, AuditEvent auditEvent)
     {
         cmd.Parameters.AddWithValue("$id", auditEvent.Id.ToString());

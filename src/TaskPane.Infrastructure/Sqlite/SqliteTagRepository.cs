@@ -246,6 +246,36 @@ public sealed class SqliteTagRepository : ITagRepository
         }
     }
 
+    public async Task<IReadOnlyList<(TaskId TaskId, TagId TagId)>> ListAllTaskTagsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var connection = await _unitOfWork.GetConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var owns = _unitOfWork.OwnsConnection(connection);
+        try
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.Transaction = _unitOfWork.AmbientTransaction;
+            cmd.CommandText = "SELECT TaskId, TagId FROM TaskTags;";
+            var list = new List<(TaskId, TagId)>();
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                list.Add((
+                    TaskId.Parse(Convert.ToString(reader["TaskId"])!),
+                    TagId.Parse(Convert.ToString(reader["TagId"])!)));
+            }
+
+            return list;
+        }
+        finally
+        {
+            if (owns)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
     private static Tag Map(SqliteDataReader reader)
     {
         string? color = reader["Color"] is DBNull ? null : Convert.ToString(reader["Color"]);

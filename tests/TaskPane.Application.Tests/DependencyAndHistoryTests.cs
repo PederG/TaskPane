@@ -313,6 +313,12 @@ public sealed class DependencyAndHistoryTests
                     && s.StartedUtc < rangeEndUtc
                     && (s.EndedUtc is null || s.EndedUtc > rangeStartUtc)).ToList());
 
+        public Task<IReadOnlyList<TimeSession>> ListAllAsync(
+            bool includeDiscarded = true,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<TimeSession>>(
+                Items.Where(s => includeDiscarded || !s.IsDiscarded).ToList());
+
         public Task InsertAsync(TimeSession session, CancellationToken cancellationToken = default)
         {
             Items.Add(Clone(session));
@@ -499,6 +505,19 @@ public sealed class DependencyAndHistoryTests
                 id => (IReadOnlyList<TagId>)(_links.TryGetValue(id, out var ids) ? ids : []));
             return Task.FromResult<IReadOnlyDictionary<TaskId, IReadOnlyList<TagId>>>(map);
         }
+        public Task<IReadOnlyList<(TaskId TaskId, TagId TagId)>> ListAllTaskTagsAsync(
+            CancellationToken cancellationToken = default)
+        {
+            var list = new List<(TaskId, TagId)>();
+            foreach (var kv in _links)
+            {
+                foreach (var tagId in kv.Value)
+                {
+                    list.Add((kv.Key, tagId));
+                }
+            }
+            return Task.FromResult<IReadOnlyList<(TaskId, TagId)>>(list);
+        }
     }
 
     private sealed class InMemoryProjectRepository : IProjectRepository
@@ -632,6 +651,9 @@ public sealed class DependencyAndHistoryTests
             return Task.FromResult(item is null ? null : Clone(item));
         }
 
+        public Task<IReadOnlyList<AuditEvent>> ListAllAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AuditEvent>>(Items.Select(Clone).ToList());
+
         private static AuditEvent Clone(AuditEvent e) => new()
         {
             Id = e.Id,
@@ -655,6 +677,10 @@ public sealed class DependencyAndHistoryTests
 
         public Task<IReadOnlyList<RecurrenceTemplate>> ListEnabledAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<RecurrenceTemplate>>(_items.Where(t => t.IsEnabled).ToList());
+
+        public Task<IReadOnlyList<RecurrenceTemplate>> ListAllAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<RecurrenceTemplate>>(_items.ToList());
+
 
         public Task InsertAsync(RecurrenceTemplate template, CancellationToken cancellationToken = default)
         {

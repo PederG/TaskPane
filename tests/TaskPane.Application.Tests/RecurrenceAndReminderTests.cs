@@ -428,6 +428,10 @@ public sealed class RecurrenceAndReminderTests
         public Task<IReadOnlyList<RecurrenceTemplate>> ListEnabledAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<RecurrenceTemplate>>(_items.Where(t => t.IsEnabled).ToList());
 
+        public Task<IReadOnlyList<RecurrenceTemplate>> ListAllAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<RecurrenceTemplate>>(_items.ToList());
+
+
         public Task InsertAsync(RecurrenceTemplate template, CancellationToken cancellationToken = default)
         {
             _items.Add(Clone(template));
@@ -494,6 +498,9 @@ public sealed class RecurrenceAndReminderTests
             return Task.CompletedTask;
         }
 
+        public Task<IReadOnlyList<Reminder>> ListAllAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<Reminder>>(Items.Select(Clone).ToList());
+
         private static Reminder Clone(Reminder r) => new()
         {
             Id = r.Id,
@@ -529,6 +536,11 @@ public sealed class RecurrenceAndReminderTests
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<TimeSession>>([]);
 
+        public Task<IReadOnlyList<TimeSession>> ListAllAsync(
+            bool includeDiscarded = true,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<TimeSession>>([]);
+
         public Task InsertAsync(TimeSession session, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task UpdateAsync(TimeSession session, CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -547,6 +559,10 @@ public sealed class RecurrenceAndReminderTests
         public Task<IReadOnlyList<TagId>> GetTagIdsForTaskAsync(TaskId taskId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<TagId>>([]);
         public Task<IReadOnlyDictionary<TaskId, IReadOnlyList<TagId>>> GetTagIdsForTasksAsync(IReadOnlyList<TaskId> taskIds, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyDictionary<TaskId, IReadOnlyList<TagId>>>(taskIds.ToDictionary(id => id, _ => (IReadOnlyList<TagId>)[]));
+
+        public Task<IReadOnlyList<(TaskId TaskId, TagId TagId)>> ListAllTaskTagsAsync(
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<(TaskId TaskId, TagId TagId)>>([]);
     }
 
     private sealed class InMemoryProjectRepository : IProjectRepository
@@ -576,5 +592,8 @@ public sealed class RecurrenceAndReminderTests
         public Task<IReadOnlyList<AuditEvent>> ListRecentAsync(int limit = 100, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<AuditEvent>>([]);
         public Task<IReadOnlyList<AuditEvent>> ListForEntityAsync(string entityType, string entityId, int limit = 50, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<AuditEvent>>([]);
         public Task<AuditEvent?> GetLatestUndoableAsync(CancellationToken cancellationToken = default) => Task.FromResult<AuditEvent?>(null);
+        public Task<IReadOnlyList<AuditEvent>> ListAllAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AuditEvent>>([]);
     }
+
 }

@@ -22,4 +22,6 @@ public interface IAuditRepository
         CancellationToken cancellationToken = default);
 
     Task<AuditEvent?> GetLatestUndoableAsync(CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AuditEvent>> ListAllAsync(CancellationToken cancellationToken = default);
 }

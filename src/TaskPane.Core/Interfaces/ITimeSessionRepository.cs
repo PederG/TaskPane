@@ -25,6 +25,10 @@ public interface ITimeSessionRepository
         bool includeDiscarded = false,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<TimeSession>> ListAllAsync(
+        bool includeDiscarded = true,
+        CancellationToken cancellationToken = default);
+
     Task InsertAsync(TimeSession session, CancellationToken cancellationToken = default);
 
     Task UpdateAsync(TimeSession session, CancellationToken cancellationToken = default);

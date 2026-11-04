@@ -23,6 +23,7 @@ public partial class App : System.Windows.Application
     private QuickCaptureWindow? _quickCapture;
     private TimeTrackingController? _timeTrackingController;
     private ReminderController? _reminderController;
+    private BackupController? _backupController;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -55,6 +56,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<INotificationPresenter, WindowsNotificationPresenter>();
                 services.AddSingleton<TimeTrackingController>();
                 services.AddSingleton<ReminderController>();
+                services.AddSingleton<BackupController>();
                 services.AddSingleton<OverlayViewModel>();
                 services.AddSingleton<ManagerViewModel>();
                 services.AddSingleton<QuickCaptureViewModel>();
@@ -137,6 +139,13 @@ public partial class App : System.Windows.Application
         });
         await _reminderController.StartAsync().ConfigureAwait(true);
 
+        _backupController = _host.Services.GetRequiredService<BackupController>();
+        _backupController.StatusChanged += () => TrayIconService.InvokeOnUi(() =>
+        {
+            _ = managerVm.RefreshBackupStatusAsync();
+        });
+        await _backupController.StartAsync().ConfigureAwait(true);
+
         _hotkeys = _host.Services.GetRequiredService<GlobalHotkeyService>();
         await _hotkeys.InitializeAsync(overlay).ConfigureAwait(true);
         _hotkeys.HotkeyPressed += () => TrayIconService.InvokeOnUi(ShowQuickCapture);
@@ -181,6 +190,16 @@ public partial class App : System.Windows.Application
 
     private void QuitApplication()
     {
+        try
+        {
+            _backupController?.ShutdownAsync().GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // best effort shutdown backup
+        }
+
+        _backupController?.Dispose();
         _reminderController?.Dispose();
         _timeTrackingController?.Dispose();
         _hotkeys?.Dispose();
@@ -192,6 +211,7 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _backupController?.Dispose();
         _reminderController?.Dispose();
         _timeTrackingController?.Dispose();
         _hotkeys?.Dispose();

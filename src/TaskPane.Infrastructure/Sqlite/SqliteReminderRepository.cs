@@ -204,6 +204,26 @@ public sealed class SqliteReminderRepository : IReminderRepository
         }
     }
 
+    public async Task<IReadOnlyList<Reminder>> ListAllAsync(CancellationToken cancellationToken = default)
+    {
+        var connection = await _unitOfWork.GetConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var owns = _unitOfWork.OwnsConnection(connection);
+        try
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.Transaction = _unitOfWork.AmbientTransaction;
+            cmd.CommandText = "SELECT * FROM Reminders ORDER BY DueUtc;";
+            return await ReadAllAsync(cmd, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (owns)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
     private static async Task<IReadOnlyList<Reminder>> ReadAllAsync(
         SqliteCommand cmd,
         CancellationToken cancellationToken)
