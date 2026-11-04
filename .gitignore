@@ -29,3 +29,6 @@ agents.md
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Project docs (kept locally / out of public tree)
+docs/
