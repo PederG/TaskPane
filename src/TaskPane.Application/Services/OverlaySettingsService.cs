@@ -19,6 +19,7 @@ public sealed class OverlaySettingsService
     {
         placement.Width = Math.Clamp(placement.Width, 280, 900);
         placement.Height = Math.Clamp(placement.Height, 220, 1200);
+        placement.MaxHeight = Math.Clamp(placement.MaxHeight, 240, 1200);
         placement.Opacity = Math.Clamp(placement.Opacity, 0.45, 1.0);
         return _settings.SaveOverlayPlacementAsync(placement, cancellationToken);
     }

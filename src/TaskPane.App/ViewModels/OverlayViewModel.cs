@@ -14,18 +14,23 @@ public partial class OverlayViewModel : ObservableObject
 {
     private readonly TaskService _taskService;
     private readonly OverlaySettingsService _overlaySettings;
+    private readonly AppSettingsService _appSettings;
     private readonly TimeTrackingService _timeTracking;
     private readonly DependencyService _dependencies;
     private readonly HashSet<TaskId> _expanded = [];
+    private DateTimeOffset? _activeStartedUtc;
+    private TaskId? _activeTaskId;
 
     public OverlayViewModel(
         TaskService taskService,
         OverlaySettingsService overlaySettings,
+        AppSettingsService appSettings,
         TimeTrackingService timeTracking,
         DependencyService dependencies)
     {
         _taskService = taskService;
         _overlaySettings = overlaySettings;
+        _appSettings = appSettings;
         _timeTracking = timeTracking;
         _dependencies = dependencies;
     }
@@ -52,6 +57,9 @@ public partial class OverlayViewModel : ObservableObject
     private OverlayPlacement _placement = new();
 
     [ObservableProperty]
+    private double _maxContentHeight = 720;
+
+    [ObservableProperty]
     private TaskRowViewModel? _notePreviewTask;
 
     [ObservableProperty]
@@ -66,6 +74,57 @@ public partial class OverlayViewModel : ObservableObject
     [ObservableProperty]
     private bool _hideBlocked;
 
+    [ObservableProperty]
+    private string _displayName = "TaskPane";
+
+    [ObservableProperty]
+    private string _searchText = string.Empty;
+
+    [ObservableProperty]
+    private bool _searchOpen;
+
+    [ObservableProperty]
+    private bool _opacityPanelOpen;
+
+    [ObservableProperty]
+    private int _visibleTaskCount;
+
+    [ObservableProperty]
+    private int _activeTaskCount;
+
+    [ObservableProperty]
+    private int _completedCount;
+
+    [ObservableProperty]
+    private int _sleepingCount;
+
+    [ObservableProperty]
+    private string _focusLabel = "Today";
+
+    [ObservableProperty]
+    private string _taskCountLabel = "0 tasks";
+
+    [ObservableProperty]
+    private string _activeCountLabel = "0 active";
+
+    [ObservableProperty]
+    private string _footerCountsLabel = "0 sleeping · 0 completed";
+
+    [ObservableProperty]
+    private bool _hasActiveTask;
+
+    [ObservableProperty]
+    private string _activeTaskTitle = string.Empty;
+
+    [ObservableProperty]
+    private string _activeElapsedText = string.Empty;
+
+    [ObservableProperty]
+    private TaskRowViewModel? _activeTaskRow;
+
+    /// <summary>List viewport ceiling so SizeToContent can measure without unbounded growth.</summary>
+    public double TaskListMaxHeight => Math.Max(120, MaxContentHeight - 280);
+
     public event Action? OpenManagerRequested;
     public event Action? QuitRequested;
     public Func<string, int, Task<ParentCompletionChoice>>? ConfirmParentCompletion { get; set; }
@@ -75,6 +134,11 @@ public partial class OverlayViewModel : ObservableObject
         Placement = await _overlaySettings.GetAsync(cancellationToken).ConfigureAwait(true);
         Opacity = Placement.Opacity;
         Topmost = Placement.Topmost;
+        MaxContentHeight = Placement.MaxHeight > 0 ? Placement.MaxHeight : 720;
+
+        var app = await _appSettings.GetAsync(cancellationToken).ConfigureAwait(true);
+        DisplayName = string.IsNullOrWhiteSpace(app.ProductDisplayName) ? "TaskPane" : app.ProductDisplayName;
+
         await RefreshAsync(cancellationToken).ConfigureAwait(true);
     }
 
@@ -86,7 +150,8 @@ public partial class OverlayViewModel : ObservableObject
         {
             FocusBucket = SelectedFocus,
             OverlayVisibility = true,
-            HideBlocked = HideBlocked
+            HideBlocked = HideBlocked,
+            SearchText = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim()
         };
         var roots = await _taskService.QueryRootsAsync(query, cancellationToken).ConfigureAwait(true);
         VisibleTasks.Clear();
@@ -98,6 +163,7 @@ public partial class OverlayViewModel : ObservableObject
         }
 
         var blockedMap = await _dependencies.GetBlockedStatesAsync(ids, cancellationToken).ConfigureAwait(true);
+        TaskRowViewModel? activeRow = null;
 
         foreach (var root in roots)
         {
@@ -111,6 +177,10 @@ public partial class OverlayViewModel : ObservableObject
             }
 
             VisibleTasks.Add(row);
+            if (row.IsTimerRunning)
+            {
+                activeRow = row;
+            }
 
             if (!expanded)
             {
@@ -123,7 +193,8 @@ public partial class OverlayViewModel : ObservableObject
                 {
                     OverlayVisibility = true,
                     FocusBucket = SelectedFocus,
-                    HideBlocked = HideBlocked
+                    HideBlocked = HideBlocked,
+                    SearchText = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim()
                 },
                 cancellationToken).ConfigureAwait(true);
             var childBlocked = await _dependencies
@@ -139,6 +210,10 @@ public partial class OverlayViewModel : ObservableObject
                 }
 
                 VisibleTasks.Add(childRow);
+                if (childRow.IsTimerRunning)
+                {
+                    activeRow = childRow;
+                }
             }
         }
 
@@ -150,6 +225,59 @@ public partial class OverlayViewModel : ObservableObject
         }
 
         HasSleepingTasks = SleepingTasks.Count > 0;
+        SleepingCount = SleepingTasks.Count;
+
+        var completed = await _taskService.QueryRootsAsync(
+            new TaskQuery
+            {
+                FocusBucket = SelectedFocus,
+                OnlyCompleted = true
+            },
+            cancellationToken).ConfigureAwait(true);
+        CompletedCount = completed.Count;
+
+        VisibleTaskCount = VisibleTasks.Count(t => !t.IsSubtask);
+        FocusLabel = SelectedFocus.ToString();
+        TaskCountLabel = VisibleTaskCount == 1 ? "1 task" : $"{VisibleTaskCount} tasks";
+        FooterCountsLabel = $"{SleepingCount} sleeping · {CompletedCount} completed";
+
+        if (active is not null)
+        {
+            _activeTaskId = active.TaskId;
+            _activeStartedUtc = active.StartedUtc;
+            HasActiveTask = true;
+            ActiveTaskCount = 1;
+            ActiveCountLabel = "1 active";
+            ActiveTaskRow = activeRow;
+            ActiveTaskTitle = activeRow?.Title
+                ?? (await _taskService.GetAsync(active.TaskId, cancellationToken).ConfigureAwait(true))?.Title
+                ?? "Active task";
+            TickActiveElapsed();
+        }
+        else
+        {
+            _activeTaskId = null;
+            _activeStartedUtc = null;
+            HasActiveTask = false;
+            ActiveTaskCount = 0;
+            ActiveCountLabel = "0 active";
+            ActiveTaskRow = null;
+            ActiveTaskTitle = string.Empty;
+            ActiveElapsedText = string.Empty;
+        }
+    }
+
+    /// <summary>Updates the active-card elapsed clock without a full list refresh.</summary>
+    public void TickActiveElapsed()
+    {
+        if (_activeStartedUtc is null)
+        {
+            ActiveElapsedText = string.Empty;
+            return;
+        }
+
+        var elapsed = DateTimeOffset.UtcNow - _activeStartedUtc.Value;
+        ActiveElapsedText = $"{SessionDuration.FormatClock(elapsed)} elapsed";
     }
 
     private async Task ApplyTimeAsync(
@@ -183,11 +311,42 @@ public partial class OverlayViewModel : ObservableObject
         await RefreshAsync().ConfigureAwait(true);
     }
 
+    [RelayCommand]
+    private async Task PauseActiveAsync()
+    {
+        if (_activeTaskId is null)
+        {
+            return;
+        }
+
+        await _timeTracking.StopAsync().ConfigureAwait(true);
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
     partial void OnSelectedFocusChanged(FocusBucket value)
         => _ = RefreshAsync();
 
     partial void OnHideBlockedChanged(bool value)
         => _ = RefreshAsync();
+
+    partial void OnSearchTextChanged(string value)
+        => _ = RefreshAsync();
+
+    [RelayCommand]
+    private void SelectFocus(FocusBucket bucket) => SelectedFocus = bucket;
+
+    [RelayCommand]
+    private void ToggleSearch()
+    {
+        SearchOpen = !SearchOpen;
+        if (!SearchOpen)
+        {
+            SearchText = string.Empty;
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleOpacityPanel() => OpacityPanelOpen = !OpacityPanelOpen;
 
     [RelayCommand]
     private async Task QuickAddAsync()
@@ -354,6 +513,7 @@ public partial class OverlayViewModel : ObservableObject
     {
         placement.Opacity = Opacity;
         placement.Topmost = Topmost;
+        placement.MaxHeight = MaxContentHeight;
         Placement = placement;
         await _overlaySettings.SaveAsync(placement, cancellationToken).ConfigureAwait(true);
     }
@@ -367,6 +527,13 @@ public partial class OverlayViewModel : ObservableObject
     partial void OnTopmostChanged(bool value)
     {
         Placement.Topmost = value;
+        _ = _overlaySettings.SaveAsync(Placement);
+    }
+
+    partial void OnMaxContentHeightChanged(double value)
+    {
+        Placement.MaxHeight = value;
+        OnPropertyChanged(nameof(TaskListMaxHeight));
         _ = _overlaySettings.SaveAsync(Placement);
     }
 }

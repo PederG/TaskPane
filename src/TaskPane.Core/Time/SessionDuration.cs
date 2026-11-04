@@ -60,4 +60,16 @@ public static class SessionDuration
 
         return $"{minutes}m";
     }
+
+    /// <summary>Elapsed clock for the active-task card (e.g. 01:24:38).</summary>
+    public static string FormatClock(TimeSpan span)
+    {
+        if (span < TimeSpan.Zero)
+        {
+            span = TimeSpan.Zero;
+        }
+
+        var hours = (int)Math.Floor(span.TotalHours);
+        return $"{hours:00}:{span.Minutes:00}:{span.Seconds:00}";
+    }
 }
