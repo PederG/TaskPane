@@ -7,6 +7,7 @@ using TaskPane.App.ViewModels;
 using TaskPane.App.Windows;
 using TaskPane.Application.DependencyInjection;
 using TaskPane.Core.Entities;
+using TaskPane.Core.Interfaces;
 using TaskPane.Infrastructure.DependencyInjection;
 using TaskPane.Infrastructure.Migrations;
 
@@ -20,6 +21,7 @@ public partial class App : System.Windows.Application
     private WindowModeController? _modeController;
     private GlobalHotkeyService? _hotkeys;
     private QuickCaptureWindow? _quickCapture;
+    private TimeTrackingController? _timeTrackingController;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -48,6 +50,8 @@ public partial class App : System.Windows.Application
             {
                 services.AddTaskPaneInfrastructure();
                 services.AddTaskPaneApplication();
+                services.AddSingleton<IWorkstationActivityMonitor, WindowsWorkstationActivityMonitor>();
+                services.AddSingleton<TimeTrackingController>();
                 services.AddSingleton<OverlayViewModel>();
                 services.AddSingleton<ManagerViewModel>();
                 services.AddSingleton<QuickCaptureViewModel>();
@@ -113,6 +117,15 @@ public partial class App : System.Windows.Application
         await overlay.InitializeAsync().ConfigureAwait(true);
         _modeController.ShowOverlay();
 
+        _timeTrackingController = _host.Services.GetRequiredService<TimeTrackingController>();
+        _timeTrackingController.SessionsChanged += () => TrayIconService.InvokeOnUi(() =>
+        {
+            _ = overlayVm.RefreshCommand.ExecuteAsync(null);
+            _ = manager.InitializeAsync();
+        });
+        managerVm.IdleThresholdChanged += () => _ = _timeTrackingController.RefreshIdleThresholdAsync();
+        await _timeTrackingController.StartAsync().ConfigureAwait(true);
+
         _hotkeys = _host.Services.GetRequiredService<GlobalHotkeyService>();
         await _hotkeys.InitializeAsync(overlay).ConfigureAwait(true);
         _hotkeys.HotkeyPressed += () => TrayIconService.InvokeOnUi(ShowQuickCapture);
@@ -157,6 +170,7 @@ public partial class App : System.Windows.Application
 
     private void QuitApplication()
     {
+        _timeTrackingController?.Dispose();
         _hotkeys?.Dispose();
         _tray?.Dispose();
         _singleInstance?.Dispose();
@@ -166,6 +180,7 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _timeTrackingController?.Dispose();
         _hotkeys?.Dispose();
         _tray?.Dispose();
         _singleInstance?.Dispose();

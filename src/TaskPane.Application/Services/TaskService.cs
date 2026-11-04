@@ -18,6 +18,7 @@ public sealed class TaskService
     private readonly IProjectRepository _projects;
     private readonly IUnitOfWork _unitOfWork;
     private readonly FocusService _focus;
+    private readonly TimeTrackingService _timeTracking;
     private readonly ILogger<TaskService> _logger;
 
     public TaskService(
@@ -26,6 +27,7 @@ public sealed class TaskService
         IProjectRepository projects,
         IUnitOfWork unitOfWork,
         FocusService focus,
+        TimeTrackingService timeTracking,
         ILogger<TaskService> logger)
     {
         _tasks = tasks;
@@ -33,6 +35,7 @@ public sealed class TaskService
         _projects = projects;
         _unitOfWork = unitOfWork;
         _focus = focus;
+        _timeTracking = timeTracking;
         _logger = logger;
     }
 
@@ -166,6 +169,8 @@ public sealed class TaskService
 
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
+            await _timeTracking.EndActiveForTaskAsync(task.Id, SessionEndReason.Slept, ct)
+                .ConfigureAwait(false);
             await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
@@ -267,6 +272,8 @@ public sealed class TaskService
             {
                 foreach (var child in incomplete)
                 {
+                    await _timeTracking.EndActiveForTaskAsync(child.Id, SessionEndReason.Completed, ct)
+                        .ConfigureAwait(false);
                     child.Status = TaskLifecycleStatus.Completed;
                     child.CompletedUtc = now;
                     child.UpdatedUtc = now;
@@ -275,6 +282,8 @@ public sealed class TaskService
                 }
             }
 
+            await _timeTracking.EndActiveForTaskAsync(task.Id, SessionEndReason.Completed, ct)
+                .ConfigureAwait(false);
             task.Status = TaskLifecycleStatus.Completed;
             task.CompletedUtc = now;
             task.UpdatedUtc = now;
@@ -323,6 +332,12 @@ public sealed class TaskService
 
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
+            foreach (var softId in ids)
+            {
+                await _timeTracking.EndActiveForTaskAsync(softId, SessionEndReason.Deleted, ct)
+                    .ConfigureAwait(false);
+            }
+
             await _tasks.SoftDeleteBatchAsync(ids, batchId, now, ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 

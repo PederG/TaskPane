@@ -7,6 +7,7 @@ using TaskPane.Core.Enums;
 using TaskPane.Infrastructure.DependencyInjection;
 using TaskPane.Infrastructure.Migrations;
 using TaskPane.Infrastructure.Paths;
+using SessionEndReason = TaskPane.Core.Enums.SessionEndReason;
 
 namespace TaskPane.Infrastructure.Tests;
 
@@ -163,6 +164,50 @@ public sealed class SqlitePersistenceTests
             Assert.Equal(project.Id, loaded.ProjectId);
             Assert.Equal([tag.Id], await org.GetTaskTagIdsAsync(created.Id));
             Assert.Empty(await tasks.ListVisibleRootsAsync(FocusBucket.Today));
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public async Task Phase3_migration_enforces_one_open_session_and_persists_switch()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "TaskPaneTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var dbPath = Path.Combine(root, "tasks.db");
+
+        try
+        {
+            await using (var services = Build(dbPath))
+            {
+                await services.GetRequiredService<SqliteMigrator>().MigrateAsync();
+                var tasks = services.GetRequiredService<TaskService>();
+                var time = services.GetRequiredService<TimeTrackingService>();
+                var a = await tasks.CreateAsync(new CreateTaskRequest { Title = "A" });
+                var b = await tasks.CreateAsync(new CreateTaskRequest { Title = "B" });
+                await time.StartOrSwitchAsync(a.Id);
+                await time.StartOrSwitchAsync(b.Id);
+                await time.StopAsync();
+
+                var open = await time.GetActiveSessionAsync();
+                Assert.Null(open);
+            }
+
+            await using (var services = Build(dbPath))
+            {
+                await services.GetRequiredService<SqliteMigrator>().MigrateAsync();
+                var tasks = services.GetRequiredService<TaskService>();
+                var time = services.GetRequiredService<TimeTrackingService>();
+                var roots = await tasks.ListVisibleRootsAsync(null);
+                var a = roots.Single(t => t.Title == "A");
+                var b = roots.Single(t => t.Title == "B");
+                Assert.Single(await time.ListSessionsForTaskAsync(a.Id));
+                Assert.Single(await time.ListSessionsForTaskAsync(b.Id));
+                Assert.Equal(SessionEndReason.Switched, (await time.ListSessionsForTaskAsync(a.Id))[0].EndReason);
+                Assert.Equal(SessionEndReason.Stopped, (await time.ListSessionsForTaskAsync(b.Id))[0].EndReason);
+            }
         }
         finally
         {
