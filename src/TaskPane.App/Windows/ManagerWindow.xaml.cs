@@ -2,10 +2,11 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using TaskPane.App.ViewModels;
+using Wpf.Ui.Controls;
 
 namespace TaskPane.App.Windows;
 
-public partial class ManagerWindow : Window
+public partial class ManagerWindow : FluentWindow
 {
     private readonly ManagerViewModel _viewModel;
     private System.Windows.Point _dragStart;
@@ -16,6 +17,7 @@ public partial class ManagerWindow : Window
         InitializeComponent();
         _viewModel = viewModel;
         DataContext = viewModel;
+        Wpf.Ui.Appearance.SystemThemeWatcher.Watch(this);
     }
 
     public Task InitializeAsync() => _viewModel.InitializeAsync();

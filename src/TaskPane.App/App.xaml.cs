@@ -10,6 +10,8 @@ using TaskPane.Core.Entities;
 using TaskPane.Core.Interfaces;
 using TaskPane.Infrastructure.DependencyInjection;
 using TaskPane.Infrastructure.Migrations;
+using Wpf.Ui.Appearance;
+using Wpf.Ui.Controls;
 
 namespace TaskPane.App;
 
@@ -28,6 +30,7 @@ public partial class App : System.Windows.Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        ApplicationThemeManager.Apply(ApplicationTheme.Dark, WindowBackdropType.Mica, updateAccent: true);
 
         _singleInstance = new SingleInstanceGuard();
         if (!_singleInstance.IsPrimaryInstance)

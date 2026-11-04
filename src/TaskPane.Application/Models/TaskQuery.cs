@@ -14,6 +14,9 @@ public sealed class TaskQuery
     public bool OnlyWaiting { get; init; }
     public bool IncludeCompleted { get; init; }
 
+    /// <summary>When true, only show completed tasks (implies completed are visible).</summary>
+    public bool OnlyCompleted { get; init; }
+
     /// <summary>When true, only show tasks that are currently blocked by required predecessors.</summary>
     public bool OnlyBlocked { get; init; }
 

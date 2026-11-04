@@ -100,7 +100,14 @@ public sealed class FocusService
         TaskItem? parent,
         IReadOnlySet<TaskId>? blockedTaskIds = null)
     {
-        if (!query.IncludeCompleted && task.IsCompleted)
+        if (query.OnlyCompleted)
+        {
+            if (!task.IsCompleted)
+            {
+                return false;
+            }
+        }
+        else if (!query.IncludeCompleted && task.IsCompleted)
         {
             return false;
         }
