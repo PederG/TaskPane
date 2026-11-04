@@ -3,16 +3,18 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:enums="clr-namespace:TaskPane.Core.Enums;assembly=TaskPane.Core"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        Title="TaskPane"
+        Title="{Binding DisplayName}"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
         ResizeMode="CanResizeWithGrip"
         ShowInTaskbar="False"
+        SizeToContent="Height"
         MinWidth="300"
-        MinHeight="240"
+        MinHeight="200"
         MaxWidth="900"
-        MaxHeight="1200"
+        MaxHeight="{Binding MaxContentHeight}"
+        Width="340"
         Topmost="{Binding Topmost}"
         Opacity="{Binding Opacity}"
         FontFamily="Segoe UI Variable Text, Segoe UI"
@@ -20,313 +22,555 @@
         KeyboardNavigation.TabNavigation="Cycle"
         LocationChanged="OverlayWindow_OnPlacementChanged"
         SizeChanged="OverlayWindow_OnPlacementChanged">
-  <Window.Resources>
-    <BooleanToVisibilityConverter x:Key="BoolToVis" />
-    <SolidColorBrush x:Key="OverlaySurfaceBrush" Color="#E61B2230" />
-    <SolidColorBrush x:Key="OverlayHeaderBrush" Color="#33202838" />
-    <SolidColorBrush x:Key="OverlayBorderBrush" Color="#55A8B4C8" />
-    <SolidColorBrush x:Key="OverlayTextBrush" Color="#F2FFFFFF" />
-    <SolidColorBrush x:Key="OverlayMutedBrush" Color="#B8D5E4F5" />
-    <SolidColorBrush x:Key="OverlayMetaBrush" Color="#99C5D8EA" />
-    <SolidColorBrush x:Key="OverlayDangerBrush" Color="#FFFF8A80" />
-    <SolidColorBrush x:Key="OverlayCautionBrush" Color="#FFFFD180" />
-  </Window.Resources>
 
-  <Border Background="{StaticResource OverlaySurfaceBrush}"
-          BorderBrush="{StaticResource OverlayBorderBrush}"
+  <Border Background="{StaticResource TpOverlayBgBrush}"
+          BorderBrush="{StaticResource TpOverlayBorderBrush}"
           BorderThickness="1"
-          CornerRadius="{StaticResource TpRadiusLg}"
-          Padding="10">
-    <DockPanel>
+          CornerRadius="{StaticResource TpOverlayWindowRadius}"
+          Padding="{StaticResource TpOverlayPadThickness}">
+    <DockPanel LastChildFill="True">
+
+      <!-- Header: drag + logo + wordmark + actions -->
       <Border x:Name="DragHeader"
               DockPanel.Dock="Top"
-              Background="{StaticResource OverlayHeaderBrush}"
-              CornerRadius="{StaticResource TpRadiusMd}"
-              Padding="10,8"
+              Background="Transparent"
+              Padding="0,0,0,8"
               MouseLeftButtonDown="DragHeader_OnMouseLeftButtonDown">
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
+
           <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-            <ui:SymbolIcon Symbol="ClipboardTaskListLtr24"
-                           Foreground="{StaticResource OverlayTextBrush}"
-                           FontSize="16"
-                           Margin="0,0,8,0" />
-            <TextBlock Text="TaskPane"
-                       FontWeight="SemiBold"
-                       Foreground="{StaticResource OverlayTextBrush}"
-                       VerticalAlignment="Center"
-                       Margin="0,0,10,0" />
-            <ComboBox Width="118"
-                      SelectedItem="{Binding SelectedFocus}"
-                      Margin="0,0,10,0"
-                      VerticalAlignment="Center"
-                      AutomationProperties.Name="Focus bucket">
-              <enums:FocusBucket>Inbox</enums:FocusBucket>
-              <enums:FocusBucket>Today</enums:FocusBucket>
-              <enums:FocusBucket>Next</enums:FocusBucket>
-              <enums:FocusBucket>Someday</enums:FocusBucket>
-            </ComboBox>
-            <CheckBox Content="Hide blocked"
-                      IsChecked="{Binding HideBlocked}"
-                      Foreground="{StaticResource OverlayMutedBrush}"
-                      VerticalAlignment="Center"
-                      AutomationProperties.Name="Hide blocked tasks" />
+            <ui:SymbolIcon Symbol="ReOrderDotsVertical24"
+                           FontSize="14"
+                           Foreground="{StaticResource TpOverlayMetaBrush}"
+                           Margin="0,0,6,0"
+                           VerticalAlignment="Center" />
+
+            <!-- Compact three-diamond mark (visual only; brand wordmark is DisplayName) -->
+            <Canvas Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center">
+              <Path Stroke="{StaticResource TpOverlayTextBrush}"
+                    StrokeThickness="1.2"
+                    Fill="Transparent"
+                    Data="M8,1.5 L12.5,6 L8,10.5 L3.5,6 Z" />
+              <Path Stroke="{StaticResource TpOverlayMutedBrush}"
+                    StrokeThickness="1.1"
+                    Fill="Transparent"
+                    Data="M8,5 L11.2,8.2 L8,11.4 L4.8,8.2 Z" />
+              <Path Stroke="{StaticResource TpOverlayMetaBrush}"
+                    StrokeThickness="1"
+                    Fill="Transparent"
+                    Data="M8,8.2 L10,10.2 L8,12.2 L6,10.2 Z" />
+            </Canvas>
+
+            <TextBlock Text="{Binding DisplayName}"
+                       Style="{StaticResource TpOverlayWordmark}" />
           </StackPanel>
-          <ui:Button Grid.Column="1"
-                     Width="34"
-                     Height="30"
-                     Padding="0"
-                     Appearance="Transparent"
-                     ToolTip="Open manager"
-                     Command="{Binding OpenManagerCommand}"
-                     AutomationProperties.Name="Open manager">
-            <ui:SymbolIcon Symbol="ArrowMaximize24" Foreground="{StaticResource OverlayTextBrush}" />
-          </ui:Button>
+
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <ui:Button Style="{StaticResource TpOverlayIconButton}"
+                       ToolTip="Search tasks"
+                       Command="{Binding ToggleSearchCommand}"
+                       AutomationProperties.Name="Search tasks">
+              <ui:SymbolIcon Symbol="Search24" FontSize="14" />
+            </ui:Button>
+            <ui:Button Style="{StaticResource TpOverlayIconButton}"
+                       ToolTip="Open manager"
+                       Command="{Binding OpenManagerCommand}"
+                       AutomationProperties.Name="Open manager">
+              <ui:SymbolIcon Symbol="ArrowMaximize24" FontSize="14" />
+            </ui:Button>
+            <ui:Button x:Name="MoreButton"
+                       Style="{StaticResource TpOverlayIconButton}"
+                       ToolTip="More"
+                       Click="MoreButton_OnClick"
+                       AutomationProperties.Name="More options">
+              <ui:SymbolIcon Symbol="MoreHorizontal24" FontSize="14" />
+              <ui:Button.ContextMenu>
+                <ContextMenu x:Name="MoreMenu">
+                  <MenuItem Header="Hide blocked"
+                            IsCheckable="True"
+                            IsChecked="{Binding HideBlocked}" />
+                  <MenuItem Header="Always on top"
+                            IsCheckable="True"
+                            IsChecked="{Binding Topmost}" />
+                  <MenuItem Header="Opacity…"
+                            Command="{Binding ToggleOpacityPanelCommand}" />
+                  <Separator />
+                  <MenuItem Header="Open manager"
+                            Command="{Binding OpenManagerCommand}" />
+                  <MenuItem Header="Quit"
+                            Command="{Binding QuitCommand}" />
+                </ContextMenu>
+              </ui:Button.ContextMenu>
+            </ui:Button>
+          </StackPanel>
         </Grid>
       </Border>
 
-      <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-        <Border Background="#CC15202C"
-                Padding="10"
-                CornerRadius="{StaticResource TpRadiusMd}"
-                Margin="0,0,0,8"
-                Visibility="{Binding NotePopoverOpen, Converter={StaticResource BoolToVis}}">
-          <DockPanel>
-            <ui:Button DockPanel.Dock="Right"
-                       Content="Close"
-                       Appearance="Secondary"
-                       Padding="8,4"
-                       Command="{Binding CloseNotesCommand}" />
-            <StackPanel>
-              <TextBlock Text="Notes preview"
-                         Foreground="{StaticResource OverlayMetaBrush}"
-                         FontSize="11"
-                         Margin="0,0,0,4" />
-              <TextBlock Text="{Binding NotePreviewTask.Title}"
-                         Foreground="{StaticResource OverlayTextBrush}"
-                         FontWeight="SemiBold"
-                         TextWrapping="Wrap" />
-              <TextBlock Text="{Binding NotePreviewTask.Notes}"
-                         Foreground="{StaticResource OverlayMutedBrush}"
-                         TextWrapping="Wrap"
-                         Margin="0,6,0,0" />
-            </StackPanel>
-          </DockPanel>
+      <!-- Focus meta row -->
+      <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10" LastChildFill="False">
+        <Border Background="{StaticResource TpOverlayPillBrush}"
+                CornerRadius="{StaticResource TpOverlayPillRadius}"
+                Padding="10,3"
+                Cursor="Hand"
+                MouseLeftButtonUp="FocusPill_OnMouseLeftButtonUp"
+                DockPanel.Dock="Left"
+                VerticalAlignment="Center">
+          <Border.ContextMenu>
+            <ContextMenu x:Name="FocusMenu">
+              <MenuItem Header="Inbox" Click="FocusMenuItem_OnClick" Tag="{x:Static enums:FocusBucket.Inbox}" />
+              <MenuItem Header="Today" Click="FocusMenuItem_OnClick" Tag="{x:Static enums:FocusBucket.Today}" />
+              <MenuItem Header="Next" Click="FocusMenuItem_OnClick" Tag="{x:Static enums:FocusBucket.Next}" />
+              <MenuItem Header="Someday" Click="FocusMenuItem_OnClick" Tag="{x:Static enums:FocusBucket.Someday}" />
+            </ContextMenu>
+          </Border.ContextMenu>
+          <TextBlock Text="{Binding FocusLabel}"
+                     FontSize="12"
+                     FontWeight="SemiBold"
+                     Foreground="#FF1A1C23"
+                     VerticalAlignment="Center" />
         </Border>
 
-        <ui:Button Content="{Binding SleepingTasks.Count, StringFormat=◷ {0} sleeping tasks}"
-                   Appearance="Transparent"
-                   HorizontalAlignment="Left"
-                   Margin="0,0,0,6"
-                   Padding="6,3"
-                   Foreground="{StaticResource OverlayMutedBrush}"
-                   Command="{Binding ToggleSleepingListCommand}"
-                   Visibility="{Binding HasSleepingTasks, Converter={StaticResource BoolToVis}}" />
-        <ListBox ItemsSource="{Binding SleepingTasks}"
-                 Background="Transparent"
-                 BorderThickness="0"
-                 MaxHeight="100"
-                 Visibility="{Binding ShowSleeping, Converter={StaticResource BoolToVis}}">
-          <ListBox.ItemTemplate>
-            <DataTemplate>
-              <DockPanel>
-                <ui:Button DockPanel.Dock="Right"
-                           Content="Wake"
-                           Appearance="Secondary"
-                           Padding="6,2"
-                           Command="{Binding DataContext.WakeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                           CommandParameter="{Binding}" />
-                <TextBlock Text="{Binding Title}" Foreground="{StaticResource OverlayMutedBrush}" />
-              </DockPanel>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
+        <TextBlock Text="{Binding TaskCountLabel}"
+                   Style="{StaticResource TpOverlayMetaText}"
+                   Margin="10,0,0,0"
+                   DockPanel.Dock="Left"
+                   VerticalAlignment="Center" />
 
+        <TextBlock Text="{Binding ActiveCountLabel}"
+                   Style="{StaticResource TpOverlayMetaText}"
+                   DockPanel.Dock="Right"
+                   HorizontalAlignment="Right"
+                   VerticalAlignment="Center" />
+      </DockPanel>
+
+      <!-- Optional search -->
+      <Border DockPanel.Dock="Top"
+              Margin="0,0,0,10"
+              Visibility="{Binding SearchOpen, Converter={StaticResource BoolToVis}}">
+        <ui:TextBox PlaceholderText="Search tasks…"
+                    Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                    AutomationProperties.Name="Search overlay tasks" />
+      </Border>
+
+      <!-- Optional opacity (not permanent chrome) -->
+      <Border DockPanel.Dock="Top"
+              Background="{StaticResource TpOverlayCardBrush}"
+              CornerRadius="{StaticResource TpOverlayControlRadius}"
+              Padding="10,8"
+              Margin="0,0,0,10"
+              Visibility="{Binding OpacityPanelOpen, Converter={StaticResource BoolToVis}}">
+        <DockPanel>
+          <TextBlock Text="Opacity"
+                     Style="{StaticResource TpOverlayMetaText}"
+                     Margin="0,0,10,0"
+                     VerticalAlignment="Center" />
+          <Slider Minimum="0.45"
+                  Maximum="1"
+                  TickFrequency="0.05"
+                  IsSnapToTickEnabled="True"
+                  VerticalAlignment="Center"
+                  Value="{Binding Opacity}"
+                  AutomationProperties.Name="Overlay opacity" />
+        </DockPanel>
+      </Border>
+
+      <!-- Footer -->
+      <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0" LastChildFill="False">
+        <ui:Button Appearance="Transparent"
+                   Padding="0"
+                   HorizontalAlignment="Left"
+                   Foreground="{StaticResource TpOverlayMetaBrush}"
+                   Command="{Binding ToggleSleepingListCommand}"
+                   AutomationProperties.Name="Sleeping and completed counts">
+          <TextBlock Text="{Binding FooterCountsLabel}"
+                     Style="{StaticResource TpOverlayFooterText}" />
+        </ui:Button>
+
+        <ui:Button DockPanel.Dock="Right"
+                   Appearance="Transparent"
+                   Padding="4,0"
+                   HorizontalAlignment="Right"
+                   Command="{Binding OpenManagerCommand}"
+                   AutomationProperties.Name="Open manager from footer">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="Open manager"
+                       FontSize="12"
+                       Foreground="{StaticResource TpOverlayMutedBrush}"
+                       VerticalAlignment="Center" />
+            <ui:SymbolIcon Symbol="ArrowUpRight24"
+                           FontSize="12"
+                           Foreground="{StaticResource TpOverlayMutedBrush}"
+                           Margin="4,0,0,0"
+                           VerticalAlignment="Center" />
+          </StackPanel>
+        </ui:Button>
+      </DockPanel>
+
+      <!-- Status (ephemeral) -->
+      <TextBlock DockPanel.Dock="Bottom"
+                 Text="{Binding StatusMessage}"
+                 Foreground="{StaticResource TpOverlayMetaBrush}"
+                 FontSize="11"
+                 Margin="0,4,0,0"
+                 TextTrimming="CharacterEllipsis">
+        <TextBlock.Style>
+          <Style TargetType="TextBlock">
+            <Setter Property="Visibility" Value="Visible" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding StatusMessage}" Value="">
+                <Setter Property="Visibility" Value="Collapsed" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding StatusMessage}" Value="{x:Null}">
+                <Setter Property="Visibility" Value="Collapsed" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </TextBlock.Style>
+      </TextBlock>
+
+      <!-- Sleeping expand -->
+      <ListBox DockPanel.Dock="Bottom"
+               ItemsSource="{Binding SleepingTasks}"
+               Background="Transparent"
+               BorderThickness="0"
+               MaxHeight="90"
+               Margin="0,0,0,6"
+               Visibility="{Binding ShowSleeping, Converter={StaticResource BoolToVis}}">
+        <ListBox.ItemContainerStyle>
+          <Style TargetType="ListBoxItem" BasedOn="{StaticResource TpOverlayListBoxItem}" />
+        </ListBox.ItemContainerStyle>
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <DockPanel>
+              <ui:Button DockPanel.Dock="Right"
+                         Content="Wake"
+                         Appearance="Secondary"
+                         Padding="8,2"
+                         Command="{Binding DataContext.WakeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                         CommandParameter="{Binding}" />
+              <TextBlock Text="{Binding Title}"
+                         Foreground="{StaticResource TpOverlayMutedBrush}"
+                         TextTrimming="CharacterEllipsis"
+                         VerticalAlignment="Center" />
+            </DockPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+
+      <!-- Quick add -->
+      <Border DockPanel.Dock="Bottom"
+              Background="{StaticResource TpOverlayCardBrush}"
+              CornerRadius="{StaticResource TpOverlayCardRadius}"
+              Padding="10,8"
+              Margin="0,4,0,0">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <ui:SymbolIcon Symbol="Add24"
+                         FontSize="14"
+                         Foreground="{StaticResource TpOverlayMutedBrush}"
+                         VerticalAlignment="Center"
+                         Margin="0,0,8,0" />
+          <TextBox x:Name="QuickAddBox"
+                   Grid.Column="1"
+                   Background="Transparent"
+                   BorderThickness="0"
+                   CaretBrush="{StaticResource TpOverlayTextBrush}"
+                   Foreground="{StaticResource TpOverlayTextBrush}"
+                   FontSize="13"
+                   VerticalAlignment="Center"
+                   Text="{Binding QuickAddText, UpdateSourceTrigger=PropertyChanged}"
+                   KeyDown="QuickAddBox_OnKeyDown"
+                   AutomationProperties.Name="Quick add task">
+            <TextBox.Style>
+              <Style TargetType="TextBox">
+                <Setter Property="Template">
+                  <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                      <Grid>
+                        <TextBlock x:Name="Placeholder"
+                                   Text="Add a task…"
+                                   Foreground="{StaticResource TpOverlayMetaBrush}"
+                                   FontSize="13"
+                                   VerticalAlignment="Center"
+                                   IsHitTestVisible="False"
+                                   Visibility="Collapsed" />
+                        <ScrollViewer x:Name="PART_ContentHost"
+                                      VerticalAlignment="Center"
+                                      Background="Transparent" />
+                      </Grid>
+                      <ControlTemplate.Triggers>
+                        <MultiTrigger>
+                          <MultiTrigger.Conditions>
+                            <Condition Property="Text" Value="" />
+                            <Condition Property="IsKeyboardFocused" Value="False" />
+                          </MultiTrigger.Conditions>
+                          <Setter TargetName="Placeholder" Property="Visibility" Value="Visible" />
+                        </MultiTrigger>
+                      </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                  </Setter.Value>
+                </Setter>
+              </Style>
+            </TextBox.Style>
+          </TextBox>
+          <StackPanel Grid.Column="2"
+                      Orientation="Horizontal"
+                      VerticalAlignment="Center"
+                      Margin="8,0,0,0"
+                      IsHitTestVisible="False">
+            <TextBlock Text="Enter"
+                       FontSize="11"
+                       Foreground="{StaticResource TpOverlayMetaBrush}"
+                       VerticalAlignment="Center" />
+            <ui:SymbolIcon Symbol="ArrowEnterLeft24"
+                           FontSize="12"
+                           Foreground="{StaticResource TpOverlayMetaBrush}"
+                           Margin="4,0,0,0"
+                           VerticalAlignment="Center" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- Notes popover -->
+      <Border DockPanel.Dock="Bottom"
+              Background="{StaticResource TpOverlayElevatedBrush}"
+              Padding="10"
+              CornerRadius="{StaticResource TpOverlayCardRadius}"
+              Margin="0,0,0,8"
+              Visibility="{Binding NotePopoverOpen, Converter={StaticResource BoolToVis}}">
+        <DockPanel>
+          <ui:Button DockPanel.Dock="Right"
+                     Content="Close"
+                     Appearance="Secondary"
+                     Padding="8,4"
+                     Command="{Binding CloseNotesCommand}" />
+          <StackPanel>
+            <TextBlock Text="Notes preview"
+                       Foreground="{StaticResource TpOverlayMetaBrush}"
+                       FontSize="11"
+                       Margin="0,0,0,4" />
+            <TextBlock Text="{Binding NotePreviewTask.Title}"
+                       Foreground="{StaticResource TpOverlayTextBrush}"
+                       FontWeight="SemiBold"
+                       TextWrapping="Wrap" />
+            <TextBlock Text="{Binding NotePreviewTask.Notes}"
+                       Foreground="{StaticResource TpOverlayMutedBrush}"
+                       TextWrapping="Wrap"
+                       Margin="0,6,0,0" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
+      <!-- Active task card -->
+      <Border DockPanel.Dock="Top"
+              Background="{StaticResource TpOverlayCardBrush}"
+              CornerRadius="{StaticResource TpOverlayCardRadius}"
+              Padding="12,10"
+              Margin="0,0,0,10"
+              Visibility="{Binding HasActiveTask, Converter={StaticResource BoolToVis}}">
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <ui:TextBox x:Name="QuickAddBox"
-                      PlaceholderText="Quick add to Inbox"
-                      Text="{Binding QuickAddText, UpdateSourceTrigger=PropertyChanged}"
-                      KeyDown="QuickAddBox_OnKeyDown"
-                      AutomationProperties.Name="Quick add task" />
-          <ui:Button Grid.Column="1"
-                     Width="36"
-                     Height="34"
-                     Margin="6,0,0,0"
-                     Appearance="Primary"
-                     Command="{Binding QuickAddCommand}"
-                     ToolTip="Add to Inbox"
-                     AutomationProperties.Name="Add task to Inbox">
-            <ui:SymbolIcon Symbol="Add24" />
-          </ui:Button>
+          <StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+              <ui:SymbolIcon Symbol="Clock24"
+                             FontSize="12"
+                             Foreground="{StaticResource TpOverlayMutedBrush}"
+                             VerticalAlignment="Center"
+                             Margin="0,0,6,0" />
+              <TextBlock Text="Currently working on"
+                         FontSize="12"
+                         Foreground="{StaticResource TpOverlayMutedBrush}"
+                         VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock Text="{Binding ActiveTaskTitle}"
+                       Style="{StaticResource TpOverlayActiveTitle}"
+                       Margin="0,0,0,4" />
+            <TextBlock Text="{Binding ActiveElapsedText}"
+                       FontSize="12"
+                       Foreground="{StaticResource TpOverlayMutedBrush}" />
+          </StackPanel>
+          <Border Grid.Column="1"
+                  Width="36"
+                  Height="36"
+                  CornerRadius="18"
+                  BorderBrush="{StaticResource TpOverlayBorderBrush}"
+                  BorderThickness="1"
+                  Background="Transparent"
+                  VerticalAlignment="Center"
+                  Margin="10,0,0,0">
+            <ui:Button Width="34"
+                       Height="34"
+                       Padding="0"
+                       Appearance="Transparent"
+                       Command="{Binding PauseActiveCommand}"
+                       ToolTip="Pause timer"
+                       AutomationProperties.Name="Pause active timer">
+              <ui:SymbolIcon Symbol="Pause24"
+                             FontSize="14"
+                             Foreground="{StaticResource TpOverlayTextBrush}" />
+            </ui:Button>
+          </Border>
         </Grid>
-        <DockPanel Margin="0,8,0,0">
-          <TextBlock Text="Opacity"
-                     Foreground="{StaticResource OverlayMutedBrush}"
-                     VerticalAlignment="Center"
-                     Margin="0,0,8,0" />
-          <Slider Minimum="0.45"
-                  Maximum="1"
-                  TickFrequency="0.05"
-                  IsSnapToTickEnabled="True"
-                  Value="{Binding Opacity}" />
-        </DockPanel>
-        <TextBlock Text="{Binding StatusMessage}"
-                   Foreground="{StaticResource OverlayMetaBrush}"
-                   FontSize="11"
-                   Margin="0,4,0,0" />
-      </StackPanel>
+      </Border>
 
+      <!-- Task list (max height keeps SizeToContent measurable) -->
       <ListBox ItemsSource="{Binding VisibleTasks}"
                Background="Transparent"
                BorderThickness="0"
+               MaxHeight="{Binding TaskListMaxHeight}"
                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-               Margin="0,8,0,0"
-               VirtualizingPanel.IsVirtualizing="True">
+               ScrollViewer.VerticalScrollBarVisibility="Auto"
+               VirtualizingPanel.IsVirtualizing="True"
+               ScrollViewer.CanContentScroll="True">
         <ListBox.ItemContainerStyle>
-          <Style TargetType="ListBoxItem">
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="Padding" Value="2,3" />
-            <Setter Property="Margin" Value="0,1" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Template">
-              <Setter.Value>
-                <ControlTemplate TargetType="ListBoxItem">
-                  <Border x:Name="RowBd"
-                          Background="Transparent"
-                          CornerRadius="6"
-                          Padding="{TemplateBinding Padding}">
-                    <ContentPresenter />
-                  </Border>
-                  <ControlTemplate.Triggers>
-                    <Trigger Property="IsMouseOver" Value="True">
-                      <Setter TargetName="RowBd" Property="Background" Value="#22FFFFFF" />
-                    </Trigger>
-                  </ControlTemplate.Triggers>
-                </ControlTemplate>
-              </Setter.Value>
-            </Setter>
-          </Style>
+          <Style TargetType="ListBoxItem" BasedOn="{StaticResource TpOverlayListBoxItem}" />
         </ListBox.ItemContainerStyle>
         <ListBox.ItemTemplate>
           <DataTemplate>
-            <Grid>
+            <Grid MinHeight="28">
               <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="24" />
-                <ColumnDefinition Width="24" />
+                <ColumnDefinition Width="28" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
+
               <ui:Button Grid.Column="0"
-                         Width="22" Height="22" Padding="0"
+                         Width="22"
+                         Height="22"
+                         Padding="0"
                          Appearance="Transparent"
-                         Foreground="#EEFFFFFF"
-                         Visibility="{Binding HasChildren, Converter={StaticResource BoolToVis}}"
-                         Command="{Binding DataContext.ToggleExpandCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                         VerticalAlignment="Center"
+                         Command="{Binding DataContext.ToggleCompleteCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                          CommandParameter="{Binding}"
-                         AutomationProperties.Name="Expand subtasks">
-                <ui:Button.Style>
-                  <Style TargetType="ui:Button">
-                    <Setter Property="Content" Value="▸" />
+                         AutomationProperties.Name="Complete task">
+                <Grid>
+                  <ui:SymbolIcon Symbol="Circle24"
+                                 FontSize="16"
+                                 Foreground="{StaticResource TpOverlayCheckboxBrush}">
+                    <ui:SymbolIcon.Style>
+                      <Style TargetType="ui:SymbolIcon">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsCompleted}" Value="True">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </ui:SymbolIcon.Style>
+                  </ui:SymbolIcon>
+                  <ui:SymbolIcon Symbol="CheckmarkCircle24"
+                                 FontSize="16"
+                                 Foreground="{StaticResource TpOverlayMutedBrush}">
+                    <ui:SymbolIcon.Style>
+                      <Style TargetType="ui:SymbolIcon">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsCompleted}" Value="True">
+                            <Setter Property="Visibility" Value="Visible" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </ui:SymbolIcon.Style>
+                  </ui:SymbolIcon>
+                </Grid>
+              </ui:Button>
+
+              <TextBlock Grid.Column="1"
+                         Text="{Binding Title}"
+                         Margin="4,0,8,0"
+                         Cursor="Hand"
+                         MouseLeftButtonUp="TaskTitle_OnMouseLeftButtonUp"
+                         ToolTip="{Binding MetaText}">
+                <TextBlock.Style>
+                  <Style TargetType="TextBlock" BasedOn="{StaticResource TpOverlayTaskTitle}">
+                    <Setter Property="Margin" Value="4,0,8,0" />
                     <Style.Triggers>
-                      <DataTrigger Binding="{Binding IsExpanded}" Value="True">
-                        <Setter Property="Content" Value="▾" />
+                      <DataTrigger Binding="{Binding IsSubtask}" Value="True">
+                        <Setter Property="Margin" Value="16,0,8,0" />
+                        <Setter Property="Foreground" Value="{StaticResource TpOverlayMutedBrush}" />
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding IsOverdue}" Value="True">
+                        <Setter Property="Foreground" Value="{StaticResource TpOverlayDangerBrush}" />
+                        <Setter Property="FontWeight" Value="SemiBold" />
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding IsBlocked}" Value="True">
+                        <Setter Property="Foreground" Value="{StaticResource TpOverlayCautionBrush}" />
                       </DataTrigger>
                     </Style.Triggers>
                   </Style>
-                </ui:Button.Style>
-              </ui:Button>
-              <CheckBox Grid.Column="1"
-                        IsChecked="{Binding IsCompleted, Mode=OneWay}"
-                        Command="{Binding DataContext.ToggleCompleteCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                        CommandParameter="{Binding}"
-                        VerticalAlignment="Center"
-                        AutomationProperties.Name="Complete task" />
-              <StackPanel Grid.Column="2" Margin="6,0,4,0">
-                <TextBlock Text="{Binding Title}" TextWrapping="Wrap" Cursor="Hand"
-                           MouseLeftButtonUp="TaskTitle_OnMouseLeftButtonUp">
-                  <TextBlock.Style>
-                    <Style TargetType="TextBlock">
-                      <Setter Property="Foreground" Value="{StaticResource OverlayTextBrush}" />
-                      <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsSubtask}" Value="True">
-                          <Setter Property="Margin" Value="12,0,0,0" />
-                          <Setter Property="Foreground" Value="{StaticResource OverlayMutedBrush}" />
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding IsOverdue}" Value="True">
-                          <Setter Property="Foreground" Value="{StaticResource OverlayDangerBrush}" />
-                          <Setter Property="FontWeight" Value="SemiBold" />
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding IsBlocked}" Value="True">
-                          <Setter Property="Foreground" Value="{StaticResource OverlayCautionBrush}" />
-                        </DataTrigger>
-                      </Style.Triggers>
-                    </Style>
-                  </TextBlock.Style>
-                </TextBlock>
-                <TextBlock Text="{Binding MetaText}"
-                           Foreground="{StaticResource OverlayMetaBrush}"
-                           FontSize="11" />
-                <TextBlock Text="{Binding NotesPreview}"
-                           Foreground="#88FFFFFF"
-                           FontSize="11"
-                           TextTrimming="CharacterEllipsis"
-                           Visibility="{Binding HasNotes, Converter={StaticResource BoolToVis}}" />
-              </StackPanel>
-              <ui:Button Grid.Column="3"
-                         Content="{Binding TimerButtonLabel}"
-                         MinWidth="28" Height="24" Margin="2,0" Padding="4,0"
-                         Appearance="Secondary"
+                </TextBlock.Style>
+              </TextBlock>
+
+              <!-- Play / active pulse -->
+              <ui:Button Grid.Column="2"
+                         Style="{StaticResource TpOverlayIconButton}"
                          Command="{Binding DataContext.ToggleTimerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                          CommandParameter="{Binding}"
                          ToolTip="Start, switch, or stop timer"
-                         AutomationProperties.Name="Toggle timer" />
-              <ui:Button Grid.Column="4"
-                         Content="Zzz"
-                         MinWidth="34" Height="24" Margin="2,0" Padding="4,0"
-                         Appearance="Transparent"
-                         Foreground="{StaticResource OverlayMutedBrush}"
-                         Command="{Binding DataContext.SleepCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                         CommandParameter="{Binding}"
-                         ToolTip="Sleep 1 hour"
-                         AutomationProperties.Name="Sleep task" />
-              <ui:Button Grid.Column="5"
-                         Content="+"
-                         Width="26" Height="24" Margin="2,0" Padding="0"
-                         Appearance="Transparent"
-                         Foreground="{StaticResource OverlayMutedBrush}"
-                         Command="{Binding DataContext.AddSubtaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                         CommandParameter="{Binding}"
-                         ToolTip="Add subtask"
-                         AutomationProperties.Name="Add subtask">
-                <ui:Button.Style>
-                  <Style TargetType="ui:Button">
-                    <Setter Property="Visibility" Value="Visible" />
-                    <Style.Triggers>
-                      <DataTrigger Binding="{Binding IsSubtask}" Value="True">
+                         AutomationProperties.Name="Toggle timer">
+                <Grid>
+                  <ui:SymbolIcon Symbol="PlayCircle24" FontSize="16">
+                    <ui:SymbolIcon.Style>
+                      <Style TargetType="ui:SymbolIcon">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsTimerRunning}" Value="True">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </ui:SymbolIcon.Style>
+                  </ui:SymbolIcon>
+                  <ui:SymbolIcon Symbol="SoundWaveCircle24" FontSize="16">
+                    <ui:SymbolIcon.Style>
+                      <Style TargetType="ui:SymbolIcon">
                         <Setter Property="Visibility" Value="Collapsed" />
-                      </DataTrigger>
-                    </Style.Triggers>
-                  </Style>
-                </ui:Button.Style>
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsTimerRunning}" Value="True">
+                            <Setter Property="Visibility" Value="Visible" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </ui:SymbolIcon.Style>
+                  </ui:SymbolIcon>
+                </Grid>
               </ui:Button>
-              <ui:Button Grid.Column="6"
-                         Content="Delete"
-                         MinWidth="52" Height="24" Padding="6,0" Margin="2,0,0,0"
-                         Appearance="Danger"
-                         Command="{Binding DataContext.SoftDeleteCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                         CommandParameter="{Binding}"
-                         ToolTip="Move to recycle bin"
-                         AutomationProperties.Name="Delete task" />
+
+              <!-- Row overflow: sleep / subtask / expand / delete / notes -->
+              <ui:Button Grid.Column="3"
+                         Style="{StaticResource TpOverlayIconButton}"
+                         Click="TaskRowMenu_OnClick"
+                         ToolTip="Task actions"
+                         AutomationProperties.Name="Task actions">
+                <ui:SymbolIcon Symbol="MoreHorizontal24" FontSize="14" />
+                <ui:Button.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Sleep 1 hour"
+                              Click="TaskMenuSleep_OnClick" />
+                    <MenuItem Header="Add subtask"
+                              Click="TaskMenuAddSubtask_OnClick" />
+                    <MenuItem Header="Expand / collapse"
+                              Click="TaskMenuExpand_OnClick" />
+                    <MenuItem Header="Notes"
+                              Click="TaskMenuNotes_OnClick" />
+                    <Separator />
+                    <MenuItem Header="Delete"
+                              Click="TaskMenuDelete_OnClick" />
+                  </ContextMenu>
+                </ui:Button.ContextMenu>
+              </ui:Button>
             </Grid>
           </DataTemplate>
         </ListBox.ItemTemplate>

@@ -20,4 +20,7 @@ public sealed class AppSettings
 
     /// <summary>When true after an unclean exit, surface a recovery status message at startup.</summary>
     public bool ShowCrashRecoveryNotice { get; set; } = true;
+
+    /// <summary>Public product wordmark shown in chrome. Defaults to TaskPane.</summary>
+    public string ProductDisplayName { get; set; } = "TaskPane";
 }

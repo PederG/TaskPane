@@ -89,4 +89,12 @@ public sealed class SessionDurationTests
         var rolled = SessionDuration.RolledUpTotal(parentSessions, [childA, childB], now);
         Assert.Equal(TimeSpan.FromMinutes(35), rolled);
     }
+
+    [Fact]
+    public void FormatClock_pads_hours_minutes_seconds()
+    {
+        Assert.Equal("01:24:38", SessionDuration.FormatClock(new TimeSpan(1, 24, 38)));
+        Assert.Equal("00:00:05", SessionDuration.FormatClock(TimeSpan.FromSeconds(5)));
+        Assert.Equal("00:00:00", SessionDuration.FormatClock(TimeSpan.FromSeconds(-3)));
+    }
 }

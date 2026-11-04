@@ -2,6 +2,10 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
 
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="OverlayChrome.xaml" />
+  </ResourceDictionary.MergedDictionaries>
+
   <!-- Shared spacing / type scale for manager + overlay -->
   <Thickness x:Key="TpSpace2">2</Thickness>
   <Thickness x:Key="TpSpace4">4</Thickness>
@@ -11,6 +15,7 @@
   <CornerRadius x:Key="TpRadiusSm">4</CornerRadius>
   <CornerRadius x:Key="TpRadiusMd">8</CornerRadius>
   <CornerRadius x:Key="TpRadiusLg">12</CornerRadius>
+  <CornerRadius x:Key="TpRadiusXl">18</CornerRadius>
   <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
   <Style x:Key="TpSectionLabel" TargetType="TextBlock">
@@ -65,7 +70,8 @@
     </Setter>
   </Style>
 
-  <Style x:Key="TpOverlayIconButton" TargetType="ui:Button">
+  <!-- Kept for manager / legacy callers; overlay uses TpOverlayIconButton from OverlayChrome -->
+  <Style x:Key="TpChromeIconButton" TargetType="ui:Button">
     <Setter Property="Padding" Value="6,4" />
     <Setter Property="MinWidth" Value="28" />
     <Setter Property="MinHeight" Value="28" />

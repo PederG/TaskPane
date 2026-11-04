@@ -1,16 +1,20 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using TaskPane.App.Services;
 using TaskPane.App.ViewModels;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 using TaskPane.Core.Placement;
+using WpfContextMenu = System.Windows.Controls.ContextMenu;
+using WpfMenuItem = System.Windows.Controls.MenuItem;
 
 namespace TaskPane.App.Windows;
 
 public partial class OverlayWindow : Window
 {
     private readonly OverlayViewModel _viewModel;
+    private readonly DispatcherTimer _elapsedTimer;
     private CancellationTokenSource? _placementSaveCts;
     private bool _suppressPlacementSave;
 
@@ -20,6 +24,13 @@ public partial class OverlayWindow : Window
         _viewModel = viewModel;
         DataContext = viewModel;
         _viewModel.ConfirmParentCompletion = ConfirmParentCompletionAsync;
+
+        _elapsedTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(1)
+        };
+        _elapsedTimer.Tick += (_, _) => _viewModel.TickActiveElapsed();
+        _elapsedTimer.Start();
     }
 
     public async Task InitializeAsync()
@@ -38,7 +49,8 @@ public partial class OverlayWindow : Window
             Left = Left,
             Top = Top,
             Width = Width,
-            Height = Height,
+            Height = ActualHeight > 0 ? ActualHeight : Height,
+            MaxHeight = _viewModel.MaxContentHeight,
             Opacity = _viewModel.Opacity,
             Topmost = _viewModel.Topmost,
             PositionLocked = _viewModel.Placement.PositionLocked,
@@ -52,9 +64,10 @@ public partial class OverlayWindow : Window
         Left = placement.Left;
         Top = placement.Top;
         Width = placement.Width;
-        Height = placement.Height;
         _viewModel.Opacity = placement.Opacity;
         _viewModel.Topmost = placement.Topmost;
+        _viewModel.MaxContentHeight = placement.MaxHeight > 0 ? placement.MaxHeight : 720;
+        MaxHeight = _viewModel.MaxContentHeight;
         EnsureOnScreen();
         _suppressPlacementSave = false;
     }
@@ -83,7 +96,7 @@ public partial class OverlayWindow : Window
 
     private void TaskTitle_OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: ViewModels.TaskRowViewModel row })
+        if (sender is FrameworkElement { DataContext: TaskRowViewModel row })
         {
             if (_viewModel.ShowNotesCommand.CanExecute(row))
             {
@@ -92,6 +105,104 @@ public partial class OverlayWindow : Window
 
             e.Handled = true;
         }
+    }
+
+    private void MoreButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (MoreButton.ContextMenu is null)
+        {
+            return;
+        }
+
+        MoreButton.ContextMenu.PlacementTarget = MoreButton;
+        MoreButton.ContextMenu.IsOpen = true;
+    }
+
+    private void FocusPill_OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { ContextMenu: { } menu } element)
+        {
+            menu.PlacementTarget = element;
+            menu.IsOpen = true;
+            e.Handled = true;
+        }
+    }
+
+    private void FocusMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is WpfMenuItem { Tag: FocusBucket bucket }
+            && _viewModel.SelectFocusCommand.CanExecute(bucket))
+        {
+            _viewModel.SelectFocusCommand.Execute(bucket);
+        }
+    }
+
+    private void TaskRowMenu_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { ContextMenu: { } menu } element)
+        {
+            menu.DataContext = element.DataContext;
+            menu.PlacementTarget = element;
+            menu.IsOpen = true;
+        }
+    }
+
+    private void TaskMenuSleep_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (TryGetRow(sender, out var row) && _viewModel.SleepCommand.CanExecute(row))
+        {
+            _viewModel.SleepCommand.Execute(row);
+        }
+    }
+
+    private void TaskMenuAddSubtask_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (TryGetRow(sender, out var row) && _viewModel.AddSubtaskCommand.CanExecute(row))
+        {
+            _viewModel.AddSubtaskCommand.Execute(row);
+        }
+    }
+
+    private void TaskMenuExpand_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (TryGetRow(sender, out var row) && _viewModel.ToggleExpandCommand.CanExecute(row))
+        {
+            _viewModel.ToggleExpandCommand.Execute(row);
+        }
+    }
+
+    private void TaskMenuNotes_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (TryGetRow(sender, out var row) && _viewModel.ShowNotesCommand.CanExecute(row))
+        {
+            _viewModel.ShowNotesCommand.Execute(row);
+        }
+    }
+
+    private void TaskMenuDelete_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (TryGetRow(sender, out var row) && _viewModel.SoftDeleteCommand.CanExecute(row))
+        {
+            _viewModel.SoftDeleteCommand.Execute(row);
+        }
+    }
+
+    private static bool TryGetRow(object sender, out TaskRowViewModel row)
+    {
+        row = null!;
+        if (sender is WpfMenuItem { Parent: WpfContextMenu { DataContext: TaskRowViewModel fromMenu } })
+        {
+            row = fromMenu;
+            return true;
+        }
+
+        if (sender is FrameworkElement { DataContext: TaskRowViewModel fromElement })
+        {
+            row = fromElement;
+            return true;
+        }
+
+        return false;
     }
 
     private void OverlayWindow_OnPlacementChanged(object? sender, EventArgs e)
@@ -124,7 +235,8 @@ public partial class OverlayWindow : Window
     {
         var workAreas = MonitorWorkAreaProbe.GetWorkAreas();
         var deviceNames = MonitorWorkAreaProbe.GetDeviceNames();
-        var current = new WindowPlacementCalculator.Rect(Left, Top, Width, Height);
+        var height = ActualHeight > 0 ? ActualHeight : Math.Min(Height, MaxHeight > 0 ? MaxHeight : 720);
+        var current = new WindowPlacementCalculator.Rect(Left, Top, Width, height);
         var preferredIndex = WindowPlacementCalculator.FindPreferredWorkAreaIndex(
             current,
             workAreas,
@@ -144,7 +256,7 @@ public partial class OverlayWindow : Window
         Left = restored.Left;
         Top = restored.Top;
         Width = restored.Width;
-        Height = restored.Height;
+        // Height is SizeToContent — do not force restored height.
     }
 
     private static string? GetMonitorName()
