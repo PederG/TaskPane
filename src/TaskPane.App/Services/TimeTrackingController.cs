@@ -168,10 +168,7 @@ public sealed class TimeTrackingController : IDisposable
         }
 
         // WPF MessageBox uses Yes/No; button labels are fixed — message states the meaning.
-<<<<<<< HEAD
-=======
         // Fully qualify: UseWindowsForms + ImplicitUsings makes MessageBox ambiguous with Forms.
->>>>>>> origin/main
         return System.Windows.MessageBox.Show(
             $"{message}\n\nYes = {yesText}\nNo = {noText}",
             "TaskPane time tracking",
