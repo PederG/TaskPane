@@ -234,7 +234,9 @@ public sealed class TaskServiceTests
         repo = new InMemoryTaskRepository();
         var tags = new InMemoryTagRepository();
         var projects = new InMemoryProjectRepository();
-        var focus = new FocusService(repo, tags);
+        var deps = new InMemoryDependencyRepository();
+        var audit = new InMemoryAuditRepository();
+        var focus = new FocusService(repo, tags, deps);
         var uow = new PassthroughUnitOfWork();
         var sessions = new InMemoryTimeSessionRepository();
         var settings = new InMemorySettingsRepository();
@@ -246,6 +248,7 @@ public sealed class TaskServiceTests
             uow,
             clock,
             NullLogger<TimeTrackingService>.Instance);
+        var history = new HistoryService(audit, repo, uow, NullLogger<HistoryService>.Instance);
         return new TaskService(
             repo,
             tags,
@@ -253,6 +256,7 @@ public sealed class TaskServiceTests
             uow,
             focus,
             time,
+            history,
             NullLogger<TaskService>.Instance);
     }
 
@@ -513,5 +517,83 @@ public sealed class TaskServiceTests
         }
 
         public Task UpdateAsync(Project project, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class InMemoryDependencyRepository : IDependencyRepository
+    {
+        public List<DependencyEdge> Items { get; } = [];
+
+        public Task<DependencyEdge?> GetByIdAsync(DependencyId id, CancellationToken cancellationToken = default)
+            => Task.FromResult(Items.FirstOrDefault(e => e.Id.Equals(id)));
+
+        public Task<IReadOnlyList<DependencyEdge>> ListAsync(bool includeDeleted = false, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<DependencyEdge>>(
+                Items.Where(e => includeDeleted || !e.IsDeleted).ToList());
+
+        public Task<IReadOnlyList<DependencyEdge>> ListForTaskAsync(
+            TaskId taskId,
+            bool includeDeleted = false,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<DependencyEdge>>(
+                Items.Where(e =>
+                    (includeDeleted || !e.IsDeleted)
+                    && (e.PredecessorTaskId.Equals(taskId) || e.SuccessorTaskId.Equals(taskId))).ToList());
+
+        public Task<DependencyEdge?> FindEdgeAsync(
+            TaskId predecessorId,
+            TaskId successorId,
+            DependencyKind kind,
+            bool includeDeleted = false,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(Items.FirstOrDefault(e =>
+                e.PredecessorTaskId.Equals(predecessorId)
+                && e.SuccessorTaskId.Equals(successorId)
+                && e.Kind == kind
+                && (includeDeleted || !e.IsDeleted)));
+
+        public Task InsertAsync(DependencyEdge edge, CancellationToken cancellationToken = default)
+        {
+            Items.Add(edge);
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateAsync(DependencyEdge edge, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task SoftDeleteAsync(DependencyId id, DateTimeOffset deletedUtc, CancellationToken cancellationToken = default)
+        {
+            var edge = Items.First(e => e.Id.Equals(id));
+            edge.DeletedUtc = deletedUtc;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class InMemoryAuditRepository : IAuditRepository
+    {
+        public List<AuditEvent> Items { get; } = [];
+
+        public Task InsertAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            Items.Add(auditEvent);
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<AuditEvent?> GetByIdAsync(AuditEventId id, CancellationToken cancellationToken = default)
+            => Task.FromResult(Items.FirstOrDefault(e => e.Id.Equals(id)));
+
+        public Task<IReadOnlyList<AuditEvent>> ListRecentAsync(int limit = 100, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AuditEvent>>(Items.Take(limit).ToList());
+
+        public Task<IReadOnlyList<AuditEvent>> ListForEntityAsync(
+            string entityType,
+            string entityId,
+            int limit = 50,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AuditEvent>>(
+                Items.Where(e => e.EntityType == entityType && e.EntityId == entityId).Take(limit).ToList());
+
+        public Task<AuditEvent?> GetLatestUndoableAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(Items.LastOrDefault(e => !e.IsUndone));
     }
 }

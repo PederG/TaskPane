@@ -203,11 +203,13 @@ public sealed class TimeTrackingServiceTests
         var tasks = new InMemoryTaskRepository();
         var tags = new InMemoryTagRepository();
         var projects = new InMemoryProjectRepository();
+        var deps = new InMemoryDependencyRepository();
+        var audit = new InMemoryAuditRepository();
         var sessions = new InMemoryTimeSessionRepository();
         var settings = new InMemorySettingsRepository();
         var uow = new PassthroughUnitOfWork();
         var clock = new FixedClock(DateTimeOffset.Parse("2026-11-04T08:00:00Z"));
-        var focus = new FocusService(tasks, tags);
+        var focus = new FocusService(tasks, tags, deps);
         var time = new TimeTrackingService(
             sessions,
             tasks,
@@ -215,6 +217,7 @@ public sealed class TimeTrackingServiceTests
             uow,
             clock,
             NullLogger<TimeTrackingService>.Instance);
+        var history = new HistoryService(audit, tasks, uow, NullLogger<HistoryService>.Instance);
         var taskService = new TaskService(
             tasks,
             tags,
@@ -222,6 +225,7 @@ public sealed class TimeTrackingServiceTests
             uow,
             focus,
             time,
+            history,
             NullLogger<TaskService>.Instance);
         return new Harness(taskService, time, sessions, clock);
     }
@@ -468,5 +472,58 @@ public sealed class TimeTrackingServiceTests
         public Task InsertAsync(Project project, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task UpdateAsync(Project project, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class InMemoryDependencyRepository : IDependencyRepository
+    {
+        public Task<DependencyEdge?> GetByIdAsync(DependencyId id, CancellationToken cancellationToken = default)
+            => Task.FromResult<DependencyEdge?>(null);
+
+        public Task<IReadOnlyList<DependencyEdge>> ListAsync(bool includeDeleted = false, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<DependencyEdge>>([]);
+
+        public Task<IReadOnlyList<DependencyEdge>> ListForTaskAsync(
+            TaskId taskId,
+            bool includeDeleted = false,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<DependencyEdge>>([]);
+
+        public Task<DependencyEdge?> FindEdgeAsync(
+            TaskId predecessorId,
+            TaskId successorId,
+            DependencyKind kind,
+            bool includeDeleted = false,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<DependencyEdge?>(null);
+
+        public Task InsertAsync(DependencyEdge edge, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task UpdateAsync(DependencyEdge edge, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task SoftDeleteAsync(DependencyId id, DateTimeOffset deletedUtc, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+
+    private sealed class InMemoryAuditRepository : IAuditRepository
+    {
+        public Task InsertAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task UpdateAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<AuditEvent?> GetByIdAsync(AuditEventId id, CancellationToken cancellationToken = default)
+            => Task.FromResult<AuditEvent?>(null);
+
+        public Task<IReadOnlyList<AuditEvent>> ListRecentAsync(int limit = 100, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AuditEvent>>([]);
+
+        public Task<IReadOnlyList<AuditEvent>> ListForEntityAsync(
+            string entityType,
+            string entityId,
+            int limit = 50,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AuditEvent>>([]);
+
+        public Task<AuditEvent?> GetLatestUndoableAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<AuditEvent?>(null);
     }
 }

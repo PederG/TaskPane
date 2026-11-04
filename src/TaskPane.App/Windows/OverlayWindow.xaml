@@ -35,12 +35,18 @@
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="TaskPane" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center" Margin="0,0,10,0" />
             <ComboBox Width="120"
-                      SelectedItem="{Binding SelectedFocus}">
+                      SelectedItem="{Binding SelectedFocus}"
+                      Margin="0,0,8,0">
               <enums:FocusBucket>Inbox</enums:FocusBucket>
               <enums:FocusBucket>Today</enums:FocusBucket>
               <enums:FocusBucket>Next</enums:FocusBucket>
               <enums:FocusBucket>Someday</enums:FocusBucket>
             </ComboBox>
+            <CheckBox Content="Hide blocked"
+                      IsChecked="{Binding HideBlocked}"
+                      Foreground="White"
+                      VerticalAlignment="Center"
+                      AutomationProperties.Name="Hide blocked tasks" />
           </StackPanel>
           <Button Grid.Column="1" Content="⤢" Width="32" Height="28" Margin="4,0"
                   ToolTip="Open manager"
@@ -173,6 +179,9 @@
                         <DataTrigger Binding="{Binding IsOverdue}" Value="True">
                           <Setter Property="Foreground" Value="#FFFF8A80" />
                           <Setter Property="FontWeight" Value="SemiBold" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsBlocked}" Value="True">
+                          <Setter Property="Foreground" Value="#FFFFD180" />
                         </DataTrigger>
                       </Style.Triggers>
                     </Style>

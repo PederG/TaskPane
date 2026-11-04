@@ -1,5 +1,6 @@
 using TaskPane.Application.Models;
 using TaskPane.Core.Deadline;
+using TaskPane.Core.Dependencies;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 using TaskPane.Core.Ids;
@@ -16,11 +17,13 @@ public sealed class FocusService
 {
     private readonly ITaskRepository _tasks;
     private readonly ITagRepository _tags;
+    private readonly IDependencyRepository _dependencies;
 
-    public FocusService(ITaskRepository tasks, ITagRepository tags)
+    public FocusService(ITaskRepository tasks, ITagRepository tags, IDependencyRepository dependencies)
     {
         _tasks = tasks;
         _tags = tags;
+        _dependencies = dependencies;
     }
 
     public async Task<IReadOnlyList<TaskItem>> QueryRootsAsync(
@@ -30,7 +33,11 @@ public sealed class FocusService
     {
         var now = utcNow ?? DateTimeOffset.UtcNow;
         var all = await _tasks.ListAsync(includeDeleted: false, cancellationToken).ConfigureAwait(false);
-        var byId = all.ToDictionary(t => t.Id);
+        var allIncludingDeleted = query.OnlyBlocked || query.HideBlocked
+            ? await _tasks.ListAsync(includeDeleted: true, cancellationToken).ConfigureAwait(false)
+            : all;
+        var blockedIds = await ResolveBlockedIdsAsync(query, allIncludingDeleted, cancellationToken)
+            .ConfigureAwait(false);
 
         IReadOnlySet<TaskId>? tagged = null;
         if (query.TagId is { } tagFilter)
@@ -40,7 +47,8 @@ public sealed class FocusService
             tagged = map.Where(kv => kv.Value.Contains(tagFilter)).Select(kv => kv.Key).ToHashSet();
         }
 
-        var roots = all.Where(t => t.IsRoot).Where(t => Matches(t, query, now, tagged, parent: null));
+        var roots = all.Where(t => t.IsRoot)
+            .Where(t => Matches(t, query, now, tagged, parent: null, blockedIds));
         return Sort(roots, query.SortMode).ToList();
     }
 
@@ -54,6 +62,11 @@ public sealed class FocusService
         var parent = await _tasks.GetByIdAsync(parentId, cancellationToken).ConfigureAwait(false);
         var children = await _tasks.ListChildrenAsync(parentId, includeDeleted: false, cancellationToken)
             .ConfigureAwait(false);
+        var allIncludingDeleted = query.OnlyBlocked || query.HideBlocked
+            ? await _tasks.ListAsync(includeDeleted: true, cancellationToken).ConfigureAwait(false)
+            : children;
+        var blockedIds = await ResolveBlockedIdsAsync(query, allIncludingDeleted, cancellationToken)
+            .ConfigureAwait(false);
 
         IReadOnlySet<TaskId>? tagged = null;
         if (query.TagId is { } tagFilter)
@@ -63,7 +76,7 @@ public sealed class FocusService
             tagged = map.Where(kv => kv.Value.Contains(tagFilter)).Select(kv => kv.Key).ToHashSet();
         }
 
-        var filtered = children.Where(t => Matches(t, query, now, tagged, parent));
+        var filtered = children.Where(t => Matches(t, query, now, tagged, parent, blockedIds));
         return Sort(filtered, query.SortMode).ToList();
     }
 
@@ -84,7 +97,8 @@ public sealed class FocusService
         TaskQuery query,
         DateTimeOffset utcNow,
         IReadOnlySet<TaskId>? taggedTaskIds,
-        TaskItem? parent)
+        TaskItem? parent,
+        IReadOnlySet<TaskId>? blockedTaskIds = null)
     {
         if (!query.IncludeCompleted && task.IsCompleted)
         {
@@ -133,6 +147,17 @@ public sealed class FocusService
             return false;
         }
 
+        var isBlocked = blockedTaskIds?.Contains(task.Id) == true;
+        if (query.OnlyBlocked && !isBlocked)
+        {
+            return false;
+        }
+
+        if (query.HideBlocked && isBlocked)
+        {
+            return false;
+        }
+
         if (!string.IsNullOrWhiteSpace(query.SearchText))
         {
             var term = query.SearchText.Trim();
@@ -145,6 +170,30 @@ public sealed class FocusService
         }
 
         return true;
+    }
+
+    private async Task<IReadOnlySet<TaskId>?> ResolveBlockedIdsAsync(
+        TaskQuery query,
+        IReadOnlyList<TaskItem> tasksForLookup,
+        CancellationToken cancellationToken)
+    {
+        if (!query.OnlyBlocked && !query.HideBlocked)
+        {
+            return null;
+        }
+
+        var edges = await _dependencies.ListAsync(includeDeleted: false, cancellationToken).ConfigureAwait(false);
+        var byId = tasksForLookup.ToDictionary(t => t.Id);
+        var blocked = new HashSet<TaskId>();
+        foreach (var task in tasksForLookup.Where(t => !t.IsDeleted))
+        {
+            if (DependencyGraph.EvaluateBlocked(task.Id, edges, byId).IsBlocked)
+            {
+                blocked.Add(task.Id);
+            }
+        }
+
+        return blocked;
     }
 
     public static IEnumerable<TaskItem> Sort(IEnumerable<TaskItem> tasks, TaskSortMode mode)
