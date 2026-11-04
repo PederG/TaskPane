@@ -8,6 +8,8 @@ using TaskPane.Core.Enums;
 using TaskPane.Core.Ids;
 using TaskPane.Core.Recurrence;
 using TaskPane.Core.Time;
+using Wpf.Ui.Appearance;
+using Wpf.Ui.Controls;
 using ReminderSettings = TaskPane.Core.Entities.ReminderSettings;
 using AuditAction = TaskPane.Core.Enums.AuditAction;
 
@@ -25,6 +27,8 @@ public partial class ManagerViewModel : ObservableObject
     private readonly ReminderService _reminders;
     private readonly BackupService _backups;
     private readonly TransferService _transfer;
+    private bool _suppressQueryRefresh;
+    private bool _suppressNavSync;
 
     public ManagerViewModel(
         TaskService taskService,
@@ -48,6 +52,8 @@ public partial class ManagerViewModel : ObservableObject
         _reminders = reminders;
         _backups = backups;
         _transfer = transfer;
+        _selectedNavItem = NavItems[0];
+        _workspaceTitle = NavItems[0].Title;
     }
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = [];
@@ -61,6 +67,23 @@ public partial class ManagerViewModel : ObservableObject
     public ObservableCollection<DependencyLinkView> BlocksLinks { get; } = [];
     public ObservableCollection<HistoryRowViewModel> HistoryRows { get; } = [];
     public ObservableCollection<TaskRowViewModel> DependencyCandidates { get; } = [];
+
+    public IReadOnlyList<ManagerNavItem> NavItems { get; } =
+    [
+        new(ManagerNavSection.Inbox, "Inbox", SymbolRegular.MailInbox24),
+        new(ManagerNavSection.Today, "Today", SymbolRegular.CalendarToday24),
+        new(ManagerNavSection.Next, "Next", SymbolRegular.ArrowNext24),
+        new(ManagerNavSection.Someday, "Someday", SymbolRegular.WeatherMoon24),
+        new(ManagerNavSection.Projects, "Projects", SymbolRegular.Folder24),
+        new(ManagerNavSection.Sleeping, "Sleeping", SymbolRegular.Sleep24),
+        new(ManagerNavSection.Completed, "Completed", SymbolRegular.CheckmarkCircle24),
+        new(ManagerNavSection.RecycleBin, "Recycle Bin", SymbolRegular.BinRecycle24),
+        new(ManagerNavSection.Reports, "Reports", SymbolRegular.DataHistogram24),
+        new(ManagerNavSection.History, "History", SymbolRegular.History24)
+    ];
+
+    [ObservableProperty]
+    private ManagerNavItem? _selectedNavItem;
 
     [ObservableProperty]
     private FocusBucket? _selectedFocus = FocusBucket.Inbox;
@@ -97,6 +120,21 @@ public partial class ManagerViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _showingHistory;
+
+    [ObservableProperty]
+    private bool _showingReports;
+
+    [ObservableProperty]
+    private bool _includeCompleted;
+
+    [ObservableProperty]
+    private bool _onlyCompleted;
+
+    [ObservableProperty]
+    private bool _isDarkTheme = true;
+
+    [ObservableProperty]
+    private string _workspaceTitle = "Inbox";
 
     [ObservableProperty]
     private TaskRowViewModel? _selectedPredecessor;
@@ -283,6 +321,12 @@ public partial class ManagerViewModel : ObservableObject
             return;
         }
 
+        if (ShowingReports)
+        {
+            await RefreshReportAsync(cancellationToken).ConfigureAwait(true);
+            return;
+        }
+
         var query = BuildQuery();
         var active = await _timeTracking.GetActiveSessionAsync(cancellationToken).ConfigureAwait(true);
         Tasks.Clear();
@@ -367,6 +411,8 @@ public partial class ManagerViewModel : ObservableObject
         IncludeSleeping = IncludeSleeping || OnlySleeping,
         OnlySleeping = OnlySleeping,
         OnlyWaiting = OnlyWaiting,
+        IncludeCompleted = IncludeCompleted || OnlyCompleted,
+        OnlyCompleted = OnlyCompleted,
         OnlyBlocked = OnlyBlocked,
         HideBlocked = HideBlocked && !OnlyBlocked,
         SortMode = SortMode,
@@ -384,26 +430,112 @@ public partial class ManagerViewModel : ObservableObject
         return Tags.Where(t => ids.Contains(t.Id)).Select(t => t.Name).ToList();
     }
 
+    partial void OnSelectedNavItemChanged(ManagerNavItem? value)
+    {
+        if (value is null || _suppressNavSync)
+        {
+            return;
+        }
+
+        ApplyNavSection(value.Section);
+    }
+
     partial void OnSelectedFocusChanged(FocusBucket? value)
     {
+        if (_suppressQueryRefresh)
+        {
+            return;
+        }
+
         ShowingRecycleBin = false;
+        ShowingHistory = false;
+        ShowingReports = false;
         _ = RefreshAsync();
     }
 
-    partial void OnSearchTextChanged(string value) => _ = RefreshAsync();
-    partial void OnFilterProjectChanged(Project? value) => _ = RefreshAsync();
-    partial void OnFilterTagChanged(Tag? value) => _ = RefreshAsync();
-    partial void OnIncludeSleepingChanged(bool value) => _ = RefreshAsync();
-    partial void OnOnlySleepingChanged(bool value) => _ = RefreshAsync();
-    partial void OnOnlyWaitingChanged(bool value) => _ = RefreshAsync();
-    partial void OnOnlyBlockedChanged(bool value) => _ = RefreshAsync();
-    partial void OnHideBlockedChanged(bool value) => _ = RefreshAsync();
-    partial void OnSortModeChanged(TaskSortMode value) => _ = RefreshAsync();
+    partial void OnSearchTextChanged(string value)
+    {
+        if (!_suppressQueryRefresh)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    partial void OnFilterProjectChanged(Project? value)
+    {
+        if (!_suppressQueryRefresh)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    partial void OnFilterTagChanged(Tag? value)
+    {
+        if (!_suppressQueryRefresh)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    partial void OnIncludeSleepingChanged(bool value)
+    {
+        if (!_suppressQueryRefresh)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    partial void OnOnlySleepingChanged(bool value)
+    {
+        if (!_suppressQueryRefresh)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    partial void OnOnlyWaitingChanged(bool value)
+    {
+        if (!_suppressQueryRefresh)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    partial void OnOnlyBlockedChanged(bool value)
+    {
+        if (!_suppressQueryRefresh)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    partial void OnHideBlockedChanged(bool value)
+    {
+        if (!_suppressQueryRefresh)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    partial void OnSortModeChanged(TaskSortMode value)
+    {
+        if (!_suppressQueryRefresh)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
     partial void OnShowingRecycleBinChanged(bool value)
     {
+        if (_suppressQueryRefresh)
+        {
+            return;
+        }
+
         if (value)
         {
             ShowingHistory = false;
+            ShowingReports = false;
         }
 
         _ = RefreshAsync();
@@ -411,12 +543,114 @@ public partial class ManagerViewModel : ObservableObject
 
     partial void OnShowingHistoryChanged(bool value)
     {
+        if (_suppressQueryRefresh)
+        {
+            return;
+        }
+
         if (value)
         {
             ShowingRecycleBin = false;
+            ShowingReports = false;
         }
 
         _ = RefreshAsync();
+    }
+
+    partial void OnShowingReportsChanged(bool value)
+    {
+        if (_suppressQueryRefresh)
+        {
+            return;
+        }
+
+        if (value)
+        {
+            ShowingRecycleBin = false;
+            ShowingHistory = false;
+        }
+
+        _ = RefreshAsync();
+    }
+
+    private void ApplyNavSection(ManagerNavSection section)
+    {
+        _suppressQueryRefresh = true;
+        try
+        {
+            ShowingRecycleBin = false;
+            ShowingHistory = false;
+            ShowingReports = false;
+            OnlySleeping = false;
+            IncludeSleeping = false;
+            IncludeCompleted = false;
+            OnlyCompleted = false;
+            WorkspaceTitle = SelectedNavItem?.Title ?? "Tasks";
+
+            switch (section)
+            {
+                case ManagerNavSection.Inbox:
+                    SelectedFocus = FocusBucket.Inbox;
+                    break;
+                case ManagerNavSection.Today:
+                    SelectedFocus = FocusBucket.Today;
+                    break;
+                case ManagerNavSection.Next:
+                    SelectedFocus = FocusBucket.Next;
+                    break;
+                case ManagerNavSection.Someday:
+                    SelectedFocus = FocusBucket.Someday;
+                    break;
+                case ManagerNavSection.Projects:
+                    SelectedFocus = null;
+                    break;
+                case ManagerNavSection.Sleeping:
+                    SelectedFocus = null;
+                    OnlySleeping = true;
+                    IncludeSleeping = true;
+                    break;
+                case ManagerNavSection.Completed:
+                    SelectedFocus = null;
+                    OnlyCompleted = true;
+                    IncludeCompleted = true;
+                    break;
+                case ManagerNavSection.RecycleBin:
+                    ShowingRecycleBin = true;
+                    break;
+                case ManagerNavSection.Reports:
+                    ShowingReports = true;
+                    break;
+                case ManagerNavSection.History:
+                    ShowingHistory = true;
+                    break;
+            }
+        }
+        finally
+        {
+            _suppressQueryRefresh = false;
+        }
+
+        _ = RefreshAsync();
+    }
+
+    private void SyncNavSelection(ManagerNavSection section)
+    {
+        var match = NavItems.FirstOrDefault(i => i.Section == section);
+        if (match is null || ReferenceEquals(SelectedNavItem, match))
+        {
+            return;
+        }
+
+        _suppressNavSync = true;
+        try
+        {
+            SelectedNavItem = match;
+            WorkspaceTitle = match.Title;
+        }
+        finally
+        {
+            _suppressNavSync = false;
+        }
     }
 
     partial void OnSelectedTaskChanged(TaskRowViewModel? value)
@@ -906,26 +1140,66 @@ public partial class ManagerViewModel : ObservableObject
     [RelayCommand]
     private void ShowRecycleBin()
     {
-        ShowingHistory = false;
-        ShowingRecycleBin = true;
+        SyncNavSelection(ManagerNavSection.RecycleBin);
+        _suppressQueryRefresh = true;
+        try
+        {
+            ShowingHistory = false;
+            ShowingReports = false;
+            ShowingRecycleBin = true;
+        }
+        finally
+        {
+            _suppressQueryRefresh = false;
+        }
+
+        WorkspaceTitle = "Recycle Bin";
+        _ = RefreshAsync();
     }
 
     [RelayCommand]
     private void ShowHistory()
     {
-        ShowingRecycleBin = false;
-        ShowingHistory = true;
+        SyncNavSelection(ManagerNavSection.History);
+        _suppressQueryRefresh = true;
+        try
+        {
+            ShowingRecycleBin = false;
+            ShowingReports = false;
+            ShowingHistory = true;
+        }
+        finally
+        {
+            _suppressQueryRefresh = false;
+        }
+
+        WorkspaceTitle = "History";
+        _ = RefreshAsync();
     }
 
     [RelayCommand]
     private void ShowTasks()
     {
-        ShowingRecycleBin = false;
-        ShowingHistory = false;
+        SyncNavSelection(ManagerNavSection.Inbox);
+        ApplyNavSection(ManagerNavSection.Inbox);
     }
 
     [RelayCommand]
-    private void ClearFocusFilter() => SelectedFocus = null;
+    private void ClearFocusFilter()
+    {
+        SyncNavSelection(ManagerNavSection.Projects);
+        ApplyNavSection(ManagerNavSection.Projects);
+    }
+
+    [RelayCommand]
+    private void ToggleTheme()
+    {
+        IsDarkTheme = !IsDarkTheme;
+        ApplicationThemeManager.Apply(
+            IsDarkTheme ? ApplicationTheme.Dark : ApplicationTheme.Light,
+            WindowBackdropType.Mica,
+            updateAccent: true);
+    }
 
     [RelayCommand]
     private async Task AddDependencyAsync()
