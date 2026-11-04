@@ -20,4 +20,9 @@ public static class ValidationCodes
     public const string ProjectNotFound = "project_not_found";
     public const string TagNotFound = "tag_not_found";
     public const string HotkeyConflict = "hotkey_conflict";
+    public const string SessionNotFound = "session_not_found";
+    public const string SessionNotOpen = "session_not_open";
+    public const string SessionOverlap = "session_overlap";
+    public const string InvalidSessionRange = "invalid_session_range";
+    public const string IdleThresholdInvalid = "idle_threshold_invalid";
 }

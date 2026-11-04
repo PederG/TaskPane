@@ -6,6 +6,7 @@ using TaskPane.Application.Services;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 using TaskPane.Core.Ids;
+using TaskPane.Core.Time;
 
 namespace TaskPane.App.ViewModels;
 
@@ -14,15 +15,18 @@ public partial class ManagerViewModel : ObservableObject
     private readonly TaskService _taskService;
     private readonly OrganizationService _organization;
     private readonly HotkeySettingsService _hotkeySettings;
+    private readonly TimeTrackingService _timeTracking;
 
     public ManagerViewModel(
         TaskService taskService,
         OrganizationService organization,
-        HotkeySettingsService hotkeySettings)
+        HotkeySettingsService hotkeySettings,
+        TimeTrackingService timeTracking)
     {
         _taskService = taskService;
         _organization = organization;
         _hotkeySettings = hotkeySettings;
+        _timeTracking = timeTracking;
     }
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = [];
@@ -30,6 +34,8 @@ public partial class ManagerViewModel : ObservableObject
     public ObservableCollection<Project> Projects { get; } = [];
     public ObservableCollection<Tag> Tags { get; } = [];
     public ObservableCollection<Tag> SelectedTags { get; } = [];
+    public ObservableCollection<SessionRowViewModel> Sessions { get; } = [];
+    public ObservableCollection<string> ReportLines { get; } = [];
 
     [ObservableProperty]
     private FocusBucket? _selectedFocus = FocusBucket.Inbox;
@@ -107,9 +113,28 @@ public partial class ManagerViewModel : ObservableObject
     private bool _hotkeyEnabled = true;
 
     [ObservableProperty]
+    private int _idleThresholdMinutes = 10;
+
+    [ObservableProperty]
+    private string _editSessionStart = string.Empty;
+
+    [ObservableProperty]
+    private string _editSessionEnd = string.Empty;
+
+    [ObservableProperty]
+    private SessionRowViewModel? _selectedSession;
+
+    [ObservableProperty]
+    private string _timeTotalsText = string.Empty;
+
+    [ObservableProperty]
+    private string _reportSummary = string.Empty;
+
+    [ObservableProperty]
     private string _statusMessage = string.Empty;
 
     public event Action? ReturnToOverlayRequested;
+    public event Action? IdleThresholdChanged;
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -117,7 +142,10 @@ public partial class ManagerViewModel : ObservableObject
         var hotkey = await _hotkeySettings.GetAsync(cancellationToken).ConfigureAwait(true);
         HotkeyLabel = hotkey.DisplayLabel;
         HotkeyEnabled = hotkey.Enabled;
+        var timeSettings = await _timeTracking.GetSettingsAsync(cancellationToken).ConfigureAwait(true);
+        IdleThresholdMinutes = timeSettings.IdleThresholdMinutes;
         await RefreshAsync(cancellationToken).ConfigureAwait(true);
+        await RefreshReportAsync(cancellationToken).ConfigureAwait(true);
     }
 
     private async Task LoadCatalogAsync(CancellationToken cancellationToken)
@@ -151,20 +179,38 @@ public partial class ManagerViewModel : ObservableObject
         }
 
         var query = BuildQuery();
+        var active = await _timeTracking.GetActiveSessionAsync(cancellationToken).ConfigureAwait(true);
         Tasks.Clear();
         var roots = await _taskService.QueryRootsAsync(query, cancellationToken).ConfigureAwait(true);
         foreach (var root in roots)
         {
             var progress = await _taskService.GetProgressAsync(root.Id, cancellationToken).ConfigureAwait(true);
             var tagNames = await ResolveTagNamesAsync(root.Id, cancellationToken).ConfigureAwait(true);
-            Tasks.Add(new TaskRowViewModel(root, progress, isExpanded: true, tagNames: tagNames));
+            var row = new TaskRowViewModel(root, progress, isExpanded: true, tagNames: tagNames);
+            await ApplyTimeAsync(row, active, cancellationToken).ConfigureAwait(true);
+            Tasks.Add(row);
             var children = await _taskService.QueryChildrenAsync(root.Id, query, cancellationToken).ConfigureAwait(true);
             foreach (var child in children)
             {
                 var childTags = await ResolveTagNamesAsync(child.Id, cancellationToken).ConfigureAwait(true);
-                Tasks.Add(new TaskRowViewModel(child, tagNames: childTags));
+                var childRow = new TaskRowViewModel(child, tagNames: childTags);
+                await ApplyTimeAsync(childRow, active, cancellationToken).ConfigureAwait(true);
+                Tasks.Add(childRow);
             }
         }
+    }
+
+    private async Task ApplyTimeAsync(
+        TaskRowViewModel row,
+        TimeSession? active,
+        CancellationToken cancellationToken)
+    {
+        var totals = await _timeTracking.GetTotalsAsync(row.Id, cancellationToken).ConfigureAwait(true);
+        var running = active is not null && active.TaskId.Equals(row.Id);
+        var label = row.IsSubtask
+            ? SessionDuration.FormatCompact(totals.Direct)
+            : SessionDuration.FormatCompact(totals.RolledUp);
+        row.ApplyTimer(running, label == "0m" && !running ? null : label);
     }
 
     private TaskQuery BuildQuery() => new()
@@ -209,6 +255,9 @@ public partial class ManagerViewModel : ObservableObject
     partial void OnSelectedTaskChanged(TaskRowViewModel? value)
     {
         SelectedTags.Clear();
+        Sessions.Clear();
+        TimeTotalsText = string.Empty;
+        SelectedSession = null;
         if (value is null)
         {
             EditTitle = string.Empty;
@@ -233,6 +282,32 @@ public partial class ManagerViewModel : ObservableObject
         EditProject = Projects.FirstOrDefault(p => value.ProjectId is { } pid && p.Id.Equals(pid));
         EditTagsCsv = value.TagsText;
         _ = LoadSelectedTagsAsync(value.Id);
+        _ = LoadSessionsAsync(value.Id);
+    }
+
+    private async Task LoadSessionsAsync(TaskId taskId)
+    {
+        Sessions.Clear();
+        var totals = await _timeTracking.GetTotalsAsync(taskId).ConfigureAwait(true);
+        TimeTotalsText = $"Direct {SessionDuration.FormatCompact(totals.Direct)} · Roll-up {SessionDuration.FormatCompact(totals.RolledUp)}";
+        var sessions = await _timeTracking.ListSessionsForTaskAsync(taskId).ConfigureAwait(true);
+        foreach (var session in sessions.OrderByDescending(s => s.StartedUtc))
+        {
+            Sessions.Add(new SessionRowViewModel(session));
+        }
+    }
+
+    partial void OnSelectedSessionChanged(SessionRowViewModel? value)
+    {
+        if (value is null)
+        {
+            EditSessionStart = string.Empty;
+            EditSessionEnd = string.Empty;
+            return;
+        }
+
+        EditSessionStart = value.StartedUtc.ToString("u");
+        EditSessionEnd = value.EndedUtc?.ToString("u") ?? string.Empty;
     }
 
     private async Task LoadSelectedTagsAsync(TaskId taskId)
@@ -598,6 +673,138 @@ public partial class ManagerViewModel : ObservableObject
 
     [RelayCommand]
     private void ClearFocusFilter() => SelectedFocus = null;
+
+    [RelayCommand]
+    private async Task ToggleTimerSelectedAsync()
+    {
+        if (SelectedTask is null)
+        {
+            return;
+        }
+
+        await _timeTracking.ToggleAsync(SelectedTask.Id).ConfigureAwait(true);
+        await RefreshAsync().ConfigureAwait(true);
+        await LoadSessionsAsync(SelectedTask.Id).ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private async Task SaveIdleThresholdAsync()
+    {
+        await _timeTracking.SaveIdleThresholdAsync(IdleThresholdMinutes).ConfigureAwait(true);
+        StatusMessage = $"Idle threshold set to {IdleThresholdMinutes} minutes.";
+        IdleThresholdChanged?.Invoke();
+    }
+
+    [RelayCommand]
+    private async Task RefreshReportAsync(CancellationToken cancellationToken = default)
+    {
+        var today = await _timeTracking.GetTodayReportAsync(cancellationToken: cancellationToken).ConfigureAwait(true);
+        var week = await _timeTracking.GetWeekReportAsync(cancellationToken: cancellationToken).ConfigureAwait(true);
+        ReportSummary =
+            $"{today.Label}: {SessionDuration.FormatCompact(today.Total)} · {week.Label}: {SessionDuration.FormatCompact(week.Total)}";
+        ReportLines.Clear();
+        ReportLines.Add($"— {today.Label} —");
+        foreach (var row in today.Rows.Take(12))
+        {
+            ReportLines.Add($"{row.Title}: {SessionDuration.FormatCompact(row.Direct)}");
+        }
+
+        ReportLines.Add($"— {week.Label} —");
+        foreach (var row in week.Rows.Take(12))
+        {
+            ReportLines.Add($"{row.Title}: {SessionDuration.FormatCompact(row.Direct)}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task SaveSelectedSessionAsync()
+    {
+        if (SelectedSession is null || SelectedSession.IsOpen)
+        {
+            StatusMessage = "Select a closed session to edit.";
+            return;
+        }
+
+        if (!DateTimeOffset.TryParse(EditSessionStart, out var start)
+            || !DateTimeOffset.TryParse(EditSessionEnd, out var end))
+        {
+            StatusMessage = "Session start/end must be valid timestamps.";
+            return;
+        }
+
+        await _timeTracking.AdjustSessionAsync(new SessionEditRequest
+        {
+            Id = SelectedSession.Id,
+            StartedUtc = start.ToUniversalTime(),
+            EndedUtc = end.ToUniversalTime(),
+            IsDiscarded = SelectedSession.IsDiscarded
+        }).ConfigureAwait(true);
+
+        StatusMessage = "Session updated.";
+        if (SelectedTask is not null)
+        {
+            await LoadSessionsAsync(SelectedTask.Id).ConfigureAwait(true);
+            await RefreshAsync().ConfigureAwait(true);
+        }
+
+        await RefreshReportAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private async Task DiscardSelectedSessionAsync()
+    {
+        if (SelectedSession is null || SelectedSession.IsOpen)
+        {
+            StatusMessage = "Select a closed session to discard.";
+            return;
+        }
+
+        await _timeTracking.DiscardSessionAsync(SelectedSession.Id).ConfigureAwait(true);
+        StatusMessage = "Session discarded.";
+        if (SelectedTask is not null)
+        {
+            await LoadSessionsAsync(SelectedTask.Id).ConfigureAwait(true);
+            await RefreshAsync().ConfigureAwait(true);
+        }
+
+        await RefreshReportAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private async Task AddManualSessionAsync()
+    {
+        if (SelectedTask is null)
+        {
+            return;
+        }
+
+        if (!DateTimeOffset.TryParse(EditSessionStart, out var start)
+            || !DateTimeOffset.TryParse(EditSessionEnd, out var end))
+        {
+            var endUtc = DateTimeOffset.UtcNow;
+            start = endUtc.AddMinutes(-30);
+            end = endUtc;
+            EditSessionStart = start.ToString("u");
+            EditSessionEnd = end.ToString("u");
+        }
+        else
+        {
+            start = start.ToUniversalTime();
+            end = end.ToUniversalTime();
+        }
+
+        await _timeTracking.AddManualSessionAsync(new ManualSessionRequest
+        {
+            TaskId = SelectedTask.Id,
+            StartedUtc = start,
+            EndedUtc = end
+        }).ConfigureAwait(true);
+
+        StatusMessage = "Manual session added.";
+        await LoadSessionsAsync(SelectedTask.Id).ConfigureAwait(true);
+        await RefreshAsync().ConfigureAwait(true);
+        await RefreshReportAsync().ConfigureAwait(true);
+    }
 
     public async Task DropMoveToParentAsync(TaskRowViewModel source, TaskRowViewModel newParent)
     {

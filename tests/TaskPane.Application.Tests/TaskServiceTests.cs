@@ -6,6 +6,7 @@ using TaskPane.Core.Enums;
 using TaskPane.Core.Errors;
 using TaskPane.Core.Ids;
 using TaskPane.Core.Interfaces;
+using OverlayPlacement = TaskPane.Core.Entities.OverlayPlacement;
 
 namespace TaskPane.Application.Tests;
 
@@ -234,13 +235,123 @@ public sealed class TaskServiceTests
         var tags = new InMemoryTagRepository();
         var projects = new InMemoryProjectRepository();
         var focus = new FocusService(repo, tags);
+        var uow = new PassthroughUnitOfWork();
+        var sessions = new InMemoryTimeSessionRepository();
+        var settings = new InMemorySettingsRepository();
+        var clock = new FixedClock(DateTimeOffset.Parse("2026-11-04T12:00:00Z"));
+        var time = new TimeTrackingService(
+            sessions,
+            repo,
+            settings,
+            uow,
+            clock,
+            NullLogger<TimeTrackingService>.Instance);
         return new TaskService(
             repo,
             tags,
             projects,
-            new PassthroughUnitOfWork(),
+            uow,
             focus,
+            time,
             NullLogger<TaskService>.Instance);
+    }
+
+    private sealed class FixedClock(DateTimeOffset utcNow) : IClock
+    {
+        public DateTimeOffset UtcNow { get; set; } = utcNow;
+    }
+
+    private sealed class InMemorySettingsRepository : ISettingsRepository
+    {
+        private readonly Dictionary<string, string> _values = new(StringComparer.Ordinal);
+
+        public Task<OverlayPlacement> GetOverlayPlacementAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new OverlayPlacement());
+
+        public Task SaveOverlayPlacementAsync(OverlayPlacement placement, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<string?> GetRawAsync(string key, CancellationToken cancellationToken = default)
+            => Task.FromResult(_values.TryGetValue(key, out var v) ? v : null);
+
+        public Task SetRawAsync(string key, string jsonValue, CancellationToken cancellationToken = default)
+        {
+            _values[key] = jsonValue;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class InMemoryTimeSessionRepository : ITimeSessionRepository
+    {
+        public List<TimeSession> Items { get; } = [];
+
+        public Task<TimeSession?> GetByIdAsync(SessionId id, CancellationToken cancellationToken = default)
+            => Task.FromResult(Items.FirstOrDefault(s => s.Id.Equals(id)));
+
+        public Task<TimeSession?> GetOpenSessionAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(Items.FirstOrDefault(s => s.IsOpen));
+
+        public Task<IReadOnlyList<TimeSession>> ListForTaskAsync(
+            TaskId taskId,
+            bool includeDiscarded = false,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<TimeSession>>(
+                Items.Where(s => s.TaskId.Equals(taskId) && (includeDiscarded || !s.IsDiscarded)).ToList());
+
+        public Task<IReadOnlyList<TimeSession>> ListForTasksAsync(
+            IReadOnlyList<TaskId> taskIds,
+            bool includeDiscarded = false,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<TimeSession>>(
+                Items.Where(s => taskIds.Contains(s.TaskId) && (includeDiscarded || !s.IsDiscarded)).ToList());
+
+        public Task<IReadOnlyList<TimeSession>> ListInRangeAsync(
+            DateTimeOffset rangeStartUtc,
+            DateTimeOffset rangeEndUtc,
+            bool includeDiscarded = false,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<TimeSession>>(
+                Items.Where(s =>
+                    (includeDiscarded || !s.IsDiscarded)
+                    && s.StartedUtc < rangeEndUtc
+                    && (s.EndedUtc is null || s.EndedUtc > rangeStartUtc)).ToList());
+
+        public Task InsertAsync(TimeSession session, CancellationToken cancellationToken = default)
+        {
+            if (session.IsOpen && Items.Any(s => s.IsOpen))
+            {
+                throw new InvalidOperationException("Only one open session allowed.");
+            }
+
+            Items.Add(Clone(session));
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateAsync(TimeSession session, CancellationToken cancellationToken = default)
+        {
+            var idx = Items.FindIndex(s => s.Id.Equals(session.Id));
+            Items[idx] = Clone(session);
+            return Task.CompletedTask;
+        }
+
+        public Task DeleteAsync(SessionId id, CancellationToken cancellationToken = default)
+        {
+            Items.RemoveAll(s => s.Id.Equals(id));
+            return Task.CompletedTask;
+        }
+
+        private static TimeSession Clone(TimeSession s) => new()
+        {
+            Id = s.Id,
+            TaskId = s.TaskId,
+            StartedUtc = s.StartedUtc,
+            EndedUtc = s.EndedUtc,
+            EndReason = s.EndReason,
+            IsDiscarded = s.IsDiscarded,
+            OpenSlot = s.OpenSlot,
+            CreatedUtc = s.CreatedUtc,
+            UpdatedUtc = s.UpdatedUtc
+        };
     }
 
     private sealed class PassthroughUnitOfWork : IUnitOfWork

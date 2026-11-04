@@ -6,6 +6,7 @@ using TaskPane.Application.Services;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 using TaskPane.Core.Ids;
+using TaskPane.Core.Time;
 
 namespace TaskPane.App.ViewModels;
 
@@ -13,12 +14,17 @@ public partial class OverlayViewModel : ObservableObject
 {
     private readonly TaskService _taskService;
     private readonly OverlaySettingsService _overlaySettings;
+    private readonly TimeTrackingService _timeTracking;
     private readonly HashSet<TaskId> _expanded = [];
 
-    public OverlayViewModel(TaskService taskService, OverlaySettingsService overlaySettings)
+    public OverlayViewModel(
+        TaskService taskService,
+        OverlaySettingsService overlaySettings,
+        TimeTrackingService timeTracking)
     {
         _taskService = taskService;
         _overlaySettings = overlaySettings;
+        _timeTracking = timeTracking;
     }
 
     public ObservableCollection<TaskRowViewModel> VisibleTasks { get; } = [];
@@ -69,6 +75,7 @@ public partial class OverlayViewModel : ObservableObject
     [RelayCommand]
     private async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
+        var active = await _timeTracking.GetActiveSessionAsync(cancellationToken).ConfigureAwait(true);
         var roots = await _taskService.ListVisibleRootsAsync(SelectedFocus, cancellationToken).ConfigureAwait(true);
         VisibleTasks.Clear();
 
@@ -76,7 +83,9 @@ public partial class OverlayViewModel : ObservableObject
         {
             var progress = await _taskService.GetProgressAsync(root.Id, cancellationToken).ConfigureAwait(true);
             var expanded = _expanded.Contains(root.Id);
-            VisibleTasks.Add(new TaskRowViewModel(root, progress, expanded));
+            var row = new TaskRowViewModel(root, progress, expanded);
+            await ApplyTimeAsync(row, active, cancellationToken).ConfigureAwait(true);
+            VisibleTasks.Add(row);
 
             if (!expanded)
             {
@@ -89,7 +98,9 @@ public partial class OverlayViewModel : ObservableObject
                 cancellationToken).ConfigureAwait(true);
             foreach (var child in children)
             {
-                VisibleTasks.Add(new TaskRowViewModel(child));
+                var childRow = new TaskRowViewModel(child);
+                await ApplyTimeAsync(childRow, active, cancellationToken).ConfigureAwait(true);
+                VisibleTasks.Add(childRow);
             }
         }
 
@@ -101,6 +112,31 @@ public partial class OverlayViewModel : ObservableObject
         }
 
         HasSleepingTasks = SleepingTasks.Count > 0;
+    }
+
+    private async Task ApplyTimeAsync(
+        TaskRowViewModel row,
+        Core.Entities.TimeSession? active,
+        CancellationToken cancellationToken)
+    {
+        var totals = await _timeTracking.GetTotalsAsync(row.Id, cancellationToken).ConfigureAwait(true);
+        var running = active is not null && active.TaskId.Equals(row.Id);
+        var label = row.IsSubtask
+            ? SessionDuration.FormatCompact(totals.Direct)
+            : SessionDuration.FormatCompact(totals.RolledUp);
+        row.ApplyTimer(running, label == "0m" && !running ? null : label);
+    }
+
+    [RelayCommand]
+    private async Task ToggleTimerAsync(TaskRowViewModel? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        await _timeTracking.ToggleAsync(row.Id).ConfigureAwait(true);
+        await RefreshAsync().ConfigureAwait(true);
     }
 
     partial void OnSelectedFocusChanged(FocusBucket value)

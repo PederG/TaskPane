@@ -76,6 +76,15 @@ public partial class TaskRowViewModel : ObservableObject
     [ObservableProperty]
     private string _metaText = string.Empty;
 
+    [ObservableProperty]
+    private bool _isTimerRunning;
+
+    [ObservableProperty]
+    private string _timeText = string.Empty;
+
+    [ObservableProperty]
+    private string _timerButtonLabel = "▶";
+
     public double ManualSortKey { get; private set; }
 
     public Guid? DeletionBatchId { get; private set; }
@@ -130,6 +139,14 @@ public partial class TaskRowViewModel : ObservableObject
         }
     }
 
+    public void ApplyTimer(bool isRunning, string? timeText)
+    {
+        IsTimerRunning = isRunning;
+        TimeText = timeText ?? string.Empty;
+        TimerButtonLabel = isRunning ? "■" : "▶";
+        MetaText = BuildMeta();
+    }
+
     private string BuildMeta()
     {
         var parts = new List<string>();
@@ -156,6 +173,16 @@ public partial class TaskRowViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(ProgressText))
         {
             parts.Add(ProgressText);
+        }
+
+        if (!string.IsNullOrWhiteSpace(TimeText))
+        {
+            parts.Add(TimeText);
+        }
+
+        if (IsTimerRunning)
+        {
+            parts.Add("Tracking");
         }
 
         return string.Join(" · ", parts);

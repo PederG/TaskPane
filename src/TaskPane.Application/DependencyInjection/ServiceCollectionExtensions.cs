@@ -10,6 +10,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<FocusService>();
         services.AddSingleton<OrganizationService>();
         services.AddSingleton<HotkeySettingsService>();
+        services.AddSingleton<TimeTrackingService>();
         services.AddSingleton<TaskService>();
         services.AddSingleton<OverlaySettingsService>();
         return services;

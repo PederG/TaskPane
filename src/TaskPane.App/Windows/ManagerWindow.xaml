@@ -224,6 +224,45 @@
               <TextBlock Text="Tags (comma-separated)" Margin="0,0,0,4" />
               <TextBox Text="{Binding EditTagsCsv, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,16" />
 
+              <TextBlock Text="Time tracking" FontWeight="SemiBold" Margin="0,0,0,8" />
+              <TextBlock Text="{Binding TimeTotalsText}" Margin="0,0,0,8" Foreground="#FF444444" />
+              <WrapPanel Margin="0,0,0,8">
+                <Button Content="▶ / ■ Timer" Margin="0,0,8,8" Padding="10,6"
+                        Command="{Binding ToggleTimerSelectedCommand}"
+                        AutomationProperties.Name="Toggle timer for selected task" />
+                <Button Content="Add 30m session" Margin="0,0,8,8" Padding="10,6"
+                        Command="{Binding AddManualSessionCommand}" />
+              </WrapPanel>
+              <ListBox ItemsSource="{Binding Sessions}"
+                       SelectedItem="{Binding SelectedSession}"
+                       Height="110"
+                       Margin="0,0,0,8"
+                       DisplayMemberPath="Display"
+                       AutomationProperties.Name="Task time sessions" />
+              <TextBlock Text="Session start (UTC)" Margin="0,0,0,4" />
+              <TextBox Text="{Binding EditSessionStart, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,8" />
+              <TextBlock Text="Session end (UTC)" Margin="0,0,0,4" />
+              <TextBox Text="{Binding EditSessionEnd, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,8" />
+              <WrapPanel Margin="0,0,0,16">
+                <Button Content="Save session" Margin="0,0,8,8" Padding="10,6"
+                        Command="{Binding SaveSelectedSessionCommand}" />
+                <Button Content="Discard session" Margin="0,0,8,8" Padding="10,6"
+                        Command="{Binding DiscardSelectedSessionCommand}" />
+              </WrapPanel>
+
+              <TextBlock Text="Time reports" FontWeight="SemiBold" Margin="0,0,0,8" />
+              <TextBlock Text="{Binding ReportSummary}" Margin="0,0,0,8" />
+              <Button Content="Refresh reports" Margin="0,0,0,8" Padding="10,6" HorizontalAlignment="Left"
+                      Command="{Binding RefreshReportCommand}" />
+              <ListBox ItemsSource="{Binding ReportLines}" Height="100" Margin="0,0,0,16" />
+
+              <TextBlock Text="Idle threshold (minutes)" FontWeight="SemiBold" Margin="0,0,0,8" />
+              <DockPanel Margin="0,0,0,16">
+                <Button DockPanel.Dock="Right" Content="Save" Margin="8,0,0,0" Padding="8,4"
+                        Command="{Binding SaveIdleThresholdCommand}" />
+                <TextBox Text="{Binding IdleThresholdMinutes, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" />
+              </DockPanel>
+
               <TextBlock Text="Projects / tags" FontWeight="SemiBold" Margin="0,0,0,8" />
               <DockPanel Margin="0,0,0,8">
                 <Button DockPanel.Dock="Right" Content="Add project" Margin="8,0,0,0" Padding="8,4"

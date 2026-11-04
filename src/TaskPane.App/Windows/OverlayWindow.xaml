@@ -134,6 +134,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
               <Button Grid.Column="0"
                       Width="22" Height="22" Padding="0"
@@ -187,13 +188,20 @@
                            Visibility="{Binding HasNotes, Converter={StaticResource BoolToVis}}" />
               </StackPanel>
               <Button Grid.Column="3"
+                      Content="{Binding TimerButtonLabel}"
+                      Width="28" Height="22" Margin="4,0"
+                      Command="{Binding DataContext.ToggleTimerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                      CommandParameter="{Binding}"
+                      ToolTip="Start, switch, or stop timer"
+                      AutomationProperties.Name="Toggle timer" />
+              <Button Grid.Column="4"
                       Content="Zzz"
                       Width="34" Height="22" Margin="4,0"
                       Command="{Binding DataContext.SleepCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                       CommandParameter="{Binding}"
                       ToolTip="Sleep 1 hour"
                       AutomationProperties.Name="Sleep task" />
-              <Button Grid.Column="4"
+              <Button Grid.Column="5"
                       Content="+"
                       Width="26" Height="22" Margin="4,0"
                       Command="{Binding DataContext.AddSubtaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -211,7 +219,7 @@
                   </Style>
                 </Button.Style>
               </Button>
-              <Button Grid.Column="5"
+              <Button Grid.Column="6"
                       Content="⋯"
                       Width="28" Height="22"
                       Command="{Binding DataContext.SoftDeleteCommand, RelativeSource={RelativeSource AncestorType=Window}}"
