@@ -12,7 +12,9 @@
                  WindowBackdropType="Mica"
                  WindowCornerPreference="Round"
                  FontFamily="Segoe UI Variable Text, Segoe UI"
-                 AllowDrop="True">
+                 AllowDrop="True"
+                 AutomationProperties.Name="TaskPane manager"
+                 KeyboardNavigation.TabNavigation="Cycle">
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -617,7 +619,8 @@
                   </WrapPanel>
                   <DockPanel Margin="0,0,0,8">
                     <TextBlock DockPanel.Dock="Left" Text="Import mode" VerticalAlignment="Center" Margin="0,0,8,0" />
-                    <ComboBox SelectedItem="{Binding SelectedImportMode}">
+                    <ComboBox SelectedItem="{Binding SelectedImportMode}"
+                              AutomationProperties.Name="Import mode">
                       <enums:ImportMode>MergeByIdSkipConflicts</enums:ImportMode>
                       <enums:ImportMode>MergeByIdFailOnConflict</enums:ImportMode>
                       <enums:ImportMode>ImportAsNew</enums:ImportMode>
@@ -627,6 +630,31 @@
                              TextWrapping="Wrap"
                              Margin="0,0,0,8"
                              Opacity="0.75" />
+
+                  <TextBlock Style="{StaticResource TpSectionLabel}" Text="APP / ACCESSIBILITY" />
+                  <ui:ToggleSwitch Content="Start with Windows (this user only)"
+                                   IsChecked="{Binding AutostartEnabled}"
+                                   Margin="0,0,0,8"
+                                   AutomationProperties.Name="Start with Windows" />
+                  <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="Theme" Width="70" VerticalAlignment="Center" />
+                    <ComboBox ItemsSource="{Binding ThemeOptions}"
+                              SelectedItem="{Binding ThemePreference}"
+                              AutomationProperties.Name="Theme preference" />
+                  </DockPanel>
+                  <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="Text scale" Width="70" VerticalAlignment="Center" />
+                    <ComboBox ItemsSource="{Binding TextScaleOptions}"
+                              SelectedItem="{Binding UiTextScalePercent}"
+                              AutomationProperties.Name="Text scale percent" />
+                  </DockPanel>
+                  <ui:ToggleSwitch Content="Write privacy-filtered logs to LocalAppData"
+                                   IsChecked="{Binding EnableFileLogging}"
+                                   Margin="0,0,0,8"
+                                   AutomationProperties.Name="Enable file logging" />
+                  <ui:Button Content="Save app settings" Margin="0,0,0,8" Appearance="Primary" HorizontalAlignment="Left"
+                             Command="{Binding SaveAppSettingsCommand}"
+                             AutomationProperties.Name="Save app settings" />
                 </StackPanel>
               </DockPanel>
             </ScrollViewer>

@@ -27,6 +27,8 @@ public partial class ManagerViewModel : ObservableObject
     private readonly ReminderService _reminders;
     private readonly BackupService _backups;
     private readonly TransferService _transfer;
+    private readonly AppSettingsService _appSettings;
+    private CancellationTokenSource? _searchDebounceCts;
     private bool _suppressQueryRefresh;
     private bool _suppressNavSync;
 
@@ -40,7 +42,8 @@ public partial class ManagerViewModel : ObservableObject
         RecurrenceService recurrence,
         ReminderService reminders,
         BackupService backups,
-        TransferService transfer)
+        TransferService transfer,
+        AppSettingsService appSettings)
     {
         _taskService = taskService;
         _organization = organization;
@@ -52,6 +55,7 @@ public partial class ManagerViewModel : ObservableObject
         _reminders = reminders;
         _backups = backups;
         _transfer = transfer;
+        _appSettings = appSettings;
         _selectedNavItem = NavItems[0];
         _workspaceTitle = NavItems[0].Title;
     }
@@ -253,8 +257,30 @@ public partial class ManagerViewModel : ObservableObject
     [ObservableProperty]
     private ImportMode _selectedImportMode = ImportMode.MergeByIdSkipConflicts;
 
+    [ObservableProperty]
+    private bool _autostartEnabled;
+
+    [ObservableProperty]
+    private ThemePreference _themePreference = ThemePreference.System;
+
+    [ObservableProperty]
+    private int _uiTextScalePercent = 100;
+
+    [ObservableProperty]
+    private bool _enableFileLogging = true;
+
+    public IReadOnlyList<ThemePreference> ThemeOptions { get; } =
+    [
+        ThemePreference.System,
+        ThemePreference.Light,
+        ThemePreference.Dark
+    ];
+
+    public IReadOnlyList<int> TextScaleOptions { get; } = [100, 110, 125, 150];
+
     public event Action? ReturnToOverlayRequested;
     public event Action? IdleThresholdChanged;
+    public event Action<AppSettings>? AppSettingsChanged;
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -268,6 +294,11 @@ public partial class ManagerViewModel : ObservableObject
         QuietHoursEnabled = reminderSettings.QuietHoursEnabled;
         QuietStartLocal = reminderSettings.QuietStartLocal;
         QuietEndLocal = reminderSettings.QuietEndLocal;
+        var app = await _appSettings.GetAsync(cancellationToken).ConfigureAwait(true);
+        AutostartEnabled = app.AutostartEnabled;
+        ThemePreference = app.Theme;
+        UiTextScalePercent = app.UiTextScalePercent;
+        EnableFileLogging = app.EnableFileLogging;
         await RefreshBackupStatusAsync(cancellationToken).ConfigureAwait(true);
         await RefreshAsync(cancellationToken).ConfigureAwait(true);
         await RefreshReportAsync(cancellationToken).ConfigureAwait(true);
@@ -455,9 +486,27 @@ public partial class ManagerViewModel : ObservableObject
 
     partial void OnSearchTextChanged(string value)
     {
-        if (!_suppressQueryRefresh)
+        if (_suppressQueryRefresh)
         {
-            _ = RefreshAsync();
+            return;
+        }
+
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts = new CancellationTokenSource();
+        var token = _searchDebounceCts.Token;
+        _ = DebouncedSearchAsync(token);
+    }
+
+    private async Task DebouncedSearchAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(200, token).ConfigureAwait(true);
+            await RefreshAsync(token).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            // expected while typing
         }
     }
 
@@ -1531,6 +1580,34 @@ public partial class ManagerViewModel : ObservableObject
                 QuietEndLocal = QuietEndLocal.Trim()
             }).ConfigureAwait(true);
             StatusMessage = "Quiet hours saved.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task SaveAppSettingsAsync()
+    {
+        try
+        {
+            var settings = new AppSettings
+            {
+                AutostartEnabled = AutostartEnabled,
+                Theme = ThemePreference,
+                UiTextScalePercent = UiTextScalePercent,
+                EnableFileLogging = EnableFileLogging,
+                ShowCrashRecoveryNotice = true
+            };
+            await _appSettings.SaveAsync(settings).ConfigureAwait(true);
+            var reloaded = await _appSettings.GetAsync().ConfigureAwait(true);
+            AutostartEnabled = reloaded.AutostartEnabled;
+            ThemePreference = reloaded.Theme;
+            UiTextScalePercent = reloaded.UiTextScalePercent;
+            EnableFileLogging = reloaded.EnableFileLogging;
+            StatusMessage = "App settings saved.";
+            AppSettingsChanged?.Invoke(reloaded);
         }
         catch (Exception ex)
         {

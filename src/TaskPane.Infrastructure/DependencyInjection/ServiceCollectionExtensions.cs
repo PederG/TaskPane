@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TaskPane.Core.Interfaces;
 using TaskPane.Infrastructure.Activity;
+using TaskPane.Infrastructure.Autostart;
 using TaskPane.Infrastructure.Migrations;
 using TaskPane.Infrastructure.Notifications;
 using TaskPane.Infrastructure.Paths;
@@ -50,6 +51,15 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IClock, SystemClock>();
         services.TryAddSingleton<IWorkstationActivityMonitor, NullWorkstationActivityMonitor>();
         services.TryAddSingleton<INotificationPresenter, NullNotificationPresenter>();
+        services.TryAddSingleton<IAutostartService, NullAutostartService>();
+        services.TryAddSingleton<ICrashMarkerStore>(sp =>
+        {
+            var factory = sp.GetService<SqliteConnectionFactory>();
+            var dataDir = factory is null
+                ? AppPaths.GetDataDirectory()
+                : Path.GetDirectoryName(factory.DatabasePath) ?? AppPaths.GetDataDirectory();
+            return new CrashMarkerStore(dataDir);
+        });
         return services;
     }
 }

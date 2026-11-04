@@ -16,6 +16,8 @@
         Topmost="{Binding Topmost}"
         Opacity="{Binding Opacity}"
         FontFamily="Segoe UI Variable Text, Segoe UI"
+        AutomationProperties.Name="TaskPane overlay"
+        KeyboardNavigation.TabNavigation="Cycle"
         LocationChanged="OverlayWindow_OnPlacementChanged"
         SizeChanged="OverlayWindow_OnPlacementChanged">
   <Window.Resources>
@@ -60,7 +62,8 @@
             <ComboBox Width="118"
                       SelectedItem="{Binding SelectedFocus}"
                       Margin="0,0,10,0"
-                      VerticalAlignment="Center">
+                      VerticalAlignment="Center"
+                      AutomationProperties.Name="Focus bucket">
               <enums:FocusBucket>Inbox</enums:FocusBucket>
               <enums:FocusBucket>Today</enums:FocusBucket>
               <enums:FocusBucket>Next</enums:FocusBucket>

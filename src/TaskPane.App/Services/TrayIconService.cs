@@ -17,19 +17,45 @@ public sealed class TrayIconService : IDisposable
     {
         _notifyIcon = new NotifyIcon
         {
-            Text = "TaskPane",
+            Text = "TaskPane — offline task overlay",
             Visible = true,
-            Icon = System.Drawing.SystemIcons.Application
+            Icon = System.Drawing.SystemIcons.Application,
+            BalloonTipTitle = "TaskPane"
         };
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Show overlay", null, (_, _) => ShowOverlayRequested?.Invoke());
-        menu.Items.Add("Open manager", null, (_, _) => OpenManagerRequested?.Invoke());
+        menu.Items.Add("Open manager / settings", null, (_, _) => OpenManagerRequested?.Invoke());
         menu.Items.Add("Quick capture", null, (_, _) => ShowQuickCaptureRequested?.Invoke());
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Quit", null, (_, _) => QuitRequested?.Invoke());
+        menu.Items.Add("Quit TaskPane", null, (_, _) => QuitRequested?.Invoke());
         _notifyIcon.ContextMenuStrip = menu;
         _notifyIcon.DoubleClick += (_, _) => ShowOverlayRequested?.Invoke();
+        _notifyIcon.MouseMove += (_, _) =>
+        {
+            // Keep tooltip short and free of task notes.
+            if (_notifyIcon is not null && _notifyIcon.Text.Length > 60)
+            {
+                _notifyIcon.Text = "TaskPane";
+            }
+        };
+    }
+
+    /// <summary>Updates the tray tooltip. Callers must not pass task titles or notes.</summary>
+    public void SetStatusTooltip(string status)
+    {
+        if (_notifyIcon is null)
+        {
+            return;
+        }
+
+        var text = string.IsNullOrWhiteSpace(status) ? "TaskPane" : $"TaskPane — {status.Trim()}";
+        if (text.Length > 63)
+        {
+            text = text[..60] + "...";
+        }
+
+        _notifyIcon.Text = text;
     }
 
     public void ShowBalloon(string title, string text, ToolTipIcon icon = ToolTipIcon.Info)
