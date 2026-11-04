@@ -32,6 +32,20 @@ public sealed class TrayIconService : IDisposable
         _notifyIcon.DoubleClick += (_, _) => ShowOverlayRequested?.Invoke();
     }
 
+    public void ShowBalloon(string title, string text, ToolTipIcon icon = ToolTipIcon.Info)
+    {
+        if (_notifyIcon is null)
+        {
+            return;
+        }
+
+        // Title only — callers must not pass task notes.
+        _notifyIcon.BalloonTipTitle = title;
+        _notifyIcon.BalloonTipText = text;
+        _notifyIcon.BalloonTipIcon = icon;
+        _notifyIcon.ShowBalloonTip(5000);
+    }
+
     public void Dispose()
     {
         if (_notifyIcon is null)

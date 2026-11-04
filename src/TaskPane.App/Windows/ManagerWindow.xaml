@@ -264,6 +264,55 @@
               <TextBlock Text="Tags (comma-separated)" Margin="0,0,0,4" />
               <TextBox Text="{Binding EditTagsCsv, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,16" />
 
+              <TextBlock Text="Recurrence" FontWeight="SemiBold" Margin="0,0,0,8" />
+              <TextBlock Text="{Binding RecurrenceSummary}" Margin="0,0,0,8" Foreground="#FF444444"
+                         AutomationProperties.Name="Recurrence summary" />
+              <ComboBox SelectedItem="{Binding RecurrenceFrequency}" Margin="0,0,0,8">
+                <enums:RecurrenceFrequency>Daily</enums:RecurrenceFrequency>
+                <enums:RecurrenceFrequency>Weekly</enums:RecurrenceFrequency>
+                <enums:RecurrenceFrequency>SelectedWeekdays</enums:RecurrenceFrequency>
+                <enums:RecurrenceFrequency>Monthly</enums:RecurrenceFrequency>
+                <enums:RecurrenceFrequency>CustomIntervalDays</enums:RecurrenceFrequency>
+              </ComboBox>
+              <TextBlock Text="Interval" Margin="0,0,0,4" />
+              <TextBox Text="{Binding RecurrenceInterval, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,8" />
+              <TextBlock Text="Weekdays (0=Sun…6=Sat, for weekly/selected)" Margin="0,0,0,4" />
+              <TextBox Text="{Binding RecurrenceWeekdays, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,8" />
+              <TextBlock Text="Day of month (monthly)" Margin="0,0,0,4" />
+              <TextBox Text="{Binding RecurrenceDayOfMonth, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,8" />
+              <TextBlock Text="Anchor date (YYYY-MM-DD)" Margin="0,0,0,4" />
+              <TextBox Text="{Binding RecurrenceAnchorDate, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,8" />
+              <WrapPanel Margin="0,0,0,16">
+                <Button Content="Attach recurrence" Margin="0,0,8,8" Padding="10,6"
+                        Command="{Binding AttachRecurrenceCommand}"
+                        AutomationProperties.Name="Attach recurrence" />
+                <Button Content="Edit this only" Margin="0,0,8,8" Padding="10,6"
+                        Command="{Binding DetachThisOccurrenceCommand}"
+                        AutomationProperties.Name="Edit this occurrence only" />
+              </WrapPanel>
+
+              <TextBlock Text="Reminders" FontWeight="SemiBold" Margin="0,0,0,8" />
+              <TextBlock Text="{Binding ReminderSummary}" Margin="0,0,0,8" Foreground="#FF444444"
+                         AutomationProperties.Name="Reminder summary" />
+              <TextBlock Text="Due local date/time" Margin="0,0,0,4" />
+              <TextBox Text="{Binding ReminderDueLocal, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,8" />
+              <Button Content="Schedule reminder" Margin="0,0,0,16" Padding="10,6" HorizontalAlignment="Left"
+                      Command="{Binding ScheduleReminderCommand}"
+                      AutomationProperties.Name="Schedule reminder" />
+              <TextBlock Text="Quiet hours" FontWeight="SemiBold" Margin="0,0,0,8" />
+              <CheckBox Content="Enabled" IsChecked="{Binding QuietHoursEnabled}" Margin="0,0,0,8" />
+              <DockPanel Margin="0,0,0,8">
+                <TextBlock DockPanel.Dock="Left" Text="Start" Width="40" VerticalAlignment="Center" />
+                <TextBox Text="{Binding QuietStartLocal, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" />
+              </DockPanel>
+              <DockPanel Margin="0,0,0,8">
+                <TextBlock DockPanel.Dock="Left" Text="End" Width="40" VerticalAlignment="Center" />
+                <TextBox Text="{Binding QuietEndLocal, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" />
+              </DockPanel>
+              <Button Content="Save quiet hours" Margin="0,0,0,16" Padding="10,6" HorizontalAlignment="Left"
+                      Command="{Binding SaveQuietHoursCommand}"
+                      AutomationProperties.Name="Save quiet hours" />
+
               <TextBlock Text="Dependencies" FontWeight="SemiBold" Margin="0,0,0,8" />
               <TextBlock Text="{Binding BlockedSummary}" Margin="0,0,0,8" Foreground="#FF8A5A00"
                          AutomationProperties.Name="Blocked status" />

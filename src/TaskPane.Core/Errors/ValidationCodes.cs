@@ -32,4 +32,11 @@ public static class ValidationCodes
     public const string AuditNotFound = "audit_not_found";
     public const string UndoNotSupported = "undo_not_supported";
     public const string UndoAlreadyApplied = "undo_already_applied";
+    public const string InvalidRecurrenceRule = "invalid_recurrence_rule";
+    public const string RecurrenceTemplateNotFound = "recurrence_template_not_found";
+    public const string RecurrenceNotAttached = "recurrence_not_attached";
+    public const string OccurrenceDuplicate = "occurrence_duplicate";
+    public const string InvalidReminder = "invalid_reminder";
+    public const string ReminderNotFound = "reminder_not_found";
+    public const string QuietHoursInvalid = "quiet_hours_invalid";
 }

@@ -22,6 +22,7 @@ public partial class App : System.Windows.Application
     private GlobalHotkeyService? _hotkeys;
     private QuickCaptureWindow? _quickCapture;
     private TimeTrackingController? _timeTrackingController;
+    private ReminderController? _reminderController;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -51,7 +52,9 @@ public partial class App : System.Windows.Application
                 services.AddTaskPaneInfrastructure();
                 services.AddTaskPaneApplication();
                 services.AddSingleton<IWorkstationActivityMonitor, WindowsWorkstationActivityMonitor>();
+                services.AddSingleton<INotificationPresenter, WindowsNotificationPresenter>();
                 services.AddSingleton<TimeTrackingController>();
+                services.AddSingleton<ReminderController>();
                 services.AddSingleton<OverlayViewModel>();
                 services.AddSingleton<ManagerViewModel>();
                 services.AddSingleton<QuickCaptureViewModel>();
@@ -126,6 +129,14 @@ public partial class App : System.Windows.Application
         managerVm.IdleThresholdChanged += () => _ = _timeTrackingController.RefreshIdleThresholdAsync();
         await _timeTrackingController.StartAsync().ConfigureAwait(true);
 
+        _reminderController = _host.Services.GetRequiredService<ReminderController>();
+        _reminderController.RemindersChanged += () => TrayIconService.InvokeOnUi(() =>
+        {
+            _ = overlayVm.RefreshCommand.ExecuteAsync(null);
+            _ = manager.InitializeAsync();
+        });
+        await _reminderController.StartAsync().ConfigureAwait(true);
+
         _hotkeys = _host.Services.GetRequiredService<GlobalHotkeyService>();
         await _hotkeys.InitializeAsync(overlay).ConfigureAwait(true);
         _hotkeys.HotkeyPressed += () => TrayIconService.InvokeOnUi(ShowQuickCapture);
@@ -170,6 +181,7 @@ public partial class App : System.Windows.Application
 
     private void QuitApplication()
     {
+        _reminderController?.Dispose();
         _timeTrackingController?.Dispose();
         _hotkeys?.Dispose();
         _tray?.Dispose();
@@ -180,6 +192,7 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _reminderController?.Dispose();
         _timeTrackingController?.Dispose();
         _hotkeys?.Dispose();
         _tray?.Dispose();

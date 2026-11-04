@@ -26,6 +26,8 @@ public sealed class TaskItem
     public string? WaitingFor { get; set; }
     public DateTimeOffset? WaitingFollowUpUtc { get; set; }
     public ProjectId? ProjectId { get; set; }
+    public RecurrenceTemplateId? RecurrenceTemplateId { get; set; }
+    public string? OccurrenceKey { get; set; }
 
     public DateTimeOffset CreatedUtc { get; set; }
     public DateTimeOffset UpdatedUtc { get; set; }
@@ -39,4 +41,5 @@ public sealed class TaskItem
     public bool IsCompleted => Status == TaskLifecycleStatus.Completed;
     public bool HasDeadline => !string.IsNullOrWhiteSpace(DeadlineLocalDate);
     public bool IsWaiting => !string.IsNullOrWhiteSpace(WaitingFor);
+    public bool IsRecurringOccurrence => RecurrenceTemplateId is not null && !string.IsNullOrWhiteSpace(OccurrenceKey);
 }

@@ -4,6 +4,7 @@ using TaskPane.Application.DependencyInjection;
 using TaskPane.Application.Models;
 using TaskPane.Application.Services;
 using TaskPane.Core.Enums;
+using TaskPane.Core.Ids;
 using TaskPane.Infrastructure.DependencyInjection;
 using TaskPane.Infrastructure.Migrations;
 using TaskPane.Infrastructure.Paths;
@@ -261,6 +262,80 @@ public sealed class SqlitePersistenceTests
                 Assert.Single(info.DependsOn);
                 Assert.True(info.Blocked.IsBlocked);
                 Assert.Contains(await history.ListRecentAsync(), e => e.Action == Core.Enums.AuditAction.Completed && e.IsUndone);
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public async Task Phase5_recurrence_and_reminders_persist_with_dedupe()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "TaskPaneTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var dbPath = Path.Combine(root, "tasks.db");
+
+        try
+        {
+            RecurrenceTemplateId templateId;
+            await using (var services = Build(dbPath))
+            {
+                await services.GetRequiredService<SqliteMigrator>().MigrateAsync();
+                var tasks = services.GetRequiredService<TaskService>();
+                var recurrence = services.GetRequiredService<RecurrenceService>();
+                var reminders = services.GetRequiredService<ReminderService>();
+
+                var seed = await tasks.CreateAsync(new CreateTaskRequest { Title = "Monthly" });
+                var template = await recurrence.AttachAsync(new AttachRecurrenceRequest
+                {
+                    TaskId = seed.Id,
+                    Rule = new Core.Recurrence.RecurrenceRule
+                    {
+                        Frequency = RecurrenceFrequency.Monthly,
+                        MonthlyMode = MonthlyRecurrenceMode.DayOfMonth,
+                        DayOfMonth = 4,
+                        Interval = 1,
+                        AnchorLocalDate = "2026-11-04"
+                    },
+                    TimeZoneId = TimeZoneInfo.Utc.Id,
+                    ConvertSourceToFirstOccurrence = true
+                });
+                templateId = template.Id;
+
+                await tasks.CompleteAsync(seed.Id, ParentCompletionChoice.CompleteParentOnly);
+                await reminders.ScheduleAsync(seed.Id, DateTimeOffset.Parse("2026-11-04T15:00:00Z"));
+                await reminders.SaveSettingsAsync(new Core.Entities.ReminderSettings
+                {
+                    QuietHoursEnabled = true,
+                    QuietStartLocal = "22:00",
+                    QuietEndLocal = "07:00"
+                });
+            }
+
+            await using (var services = Build(dbPath))
+            {
+                await services.GetRequiredService<SqliteMigrator>().MigrateAsync();
+                var tasks = services.GetRequiredService<TaskService>();
+                var recurrence = services.GetRequiredService<RecurrenceService>();
+                var reminders = services.GetRequiredService<ReminderService>();
+                var taskRepo = services.GetRequiredService<Core.Interfaces.ITaskRepository>();
+
+                var nov = await taskRepo.FindByOccurrenceKeyAsync(templateId, "2026-11-04");
+                var dec = await taskRepo.FindByOccurrenceKeyAsync(templateId, "2026-12-04");
+                Assert.NotNull(nov);
+                Assert.True(nov!.IsCompleted);
+                Assert.NotNull(dec);
+                Assert.False(dec!.IsCompleted);
+
+                var again = await recurrence.EvaluateTemplateAsync(templateId);
+                Assert.Equal(dec.Id, again!.Id);
+
+                var listed = await reminders.ListForTaskAsync(nov.Id);
+                Assert.Single(listed);
+                var settings = await reminders.GetSettingsAsync();
+                Assert.Equal("22:00", settings.QuietStartLocal);
             }
         }
         finally

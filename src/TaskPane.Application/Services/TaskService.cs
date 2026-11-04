@@ -20,6 +20,7 @@ public sealed class TaskService
     private readonly FocusService _focus;
     private readonly TimeTrackingService _timeTracking;
     private readonly HistoryService _history;
+    private readonly RecurrenceService _recurrence;
     private readonly ILogger<TaskService> _logger;
 
     public TaskService(
@@ -30,6 +31,7 @@ public sealed class TaskService
         FocusService focus,
         TimeTrackingService timeTracking,
         HistoryService history,
+        RecurrenceService recurrence,
         ILogger<TaskService> logger)
     {
         _tasks = tasks;
@@ -39,6 +41,7 @@ public sealed class TaskService
         _focus = focus;
         _timeTracking = timeTracking;
         _history = history;
+        _recurrence = recurrence;
         _logger = logger;
     }
 
@@ -298,6 +301,9 @@ public sealed class TaskService
             await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
             await _history.RecordCompletedAsync(task, completedChildren, applied, ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
+
+        // Completing an occurrence generates the next independent instance (does not complete futures).
+        await _recurrence.EnsureNextAfterCompletionAsync(task, cancellationToken).ConfigureAwait(false);
 
         return new CompleteTaskResult
         {

@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using TaskPane.Core.Interfaces;
 using TaskPane.Infrastructure.Activity;
 using TaskPane.Infrastructure.Migrations;
+using TaskPane.Infrastructure.Notifications;
 using TaskPane.Infrastructure.Paths;
 using TaskPane.Infrastructure.Sqlite;
 
@@ -20,6 +21,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMigration, Migration002_Phase2RichEditing>();
         services.AddSingleton<IMigration, Migration003_Phase3TimeTracking>();
         services.AddSingleton<IMigration, Migration004_Phase4DependenciesHistory>();
+        services.AddSingleton<IMigration, Migration005_Phase5RecurrenceReminders>();
         services.AddSingleton<SqliteMigrator>();
         services.AddSingleton<SqliteUnitOfWork>();
         services.AddSingleton<IUnitOfWork>(sp => sp.GetRequiredService<SqliteUnitOfWork>());
@@ -30,8 +32,11 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITimeSessionRepository, SqliteTimeSessionRepository>();
         services.AddSingleton<IDependencyRepository, SqliteDependencyRepository>();
         services.AddSingleton<IAuditRepository, SqliteAuditRepository>();
+        services.AddSingleton<IRecurrenceTemplateRepository, SqliteRecurrenceTemplateRepository>();
+        services.AddSingleton<IReminderRepository, SqliteReminderRepository>();
         services.AddSingleton<IClock, SystemClock>();
         services.TryAddSingleton<IWorkstationActivityMonitor, NullWorkstationActivityMonitor>();
+        services.TryAddSingleton<INotificationPresenter, NullNotificationPresenter>();
         return services;
     }
 }
