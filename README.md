@@ -2,7 +2,7 @@
 
 TaskPane is a Windows 11, offline-first personal task and focus manager. Its primary interaction is a **small, movable, resizable, translucent, always-on-top overlay**. A separate **full management window** provides detailed planning, notes, reporting and configuration. Both windows use the same local data.
 
-**Status:** Phase 0–6 implemented (foundation through backup, JSON/Markdown transfer, and recovery). Phase 7 polish/shipping remains in `docs/TASKS.md`.
+**Status:** Phase 0–7 implemented (foundation through production polish/shipping). See [CHANGELOG.md](CHANGELOG.md) and [SUPPORT.md](SUPPORT.md).
 
 ## Start here
 
@@ -17,11 +17,11 @@ Cursor project guidance is in [`AGENTS.md`](AGENTS.md) and [`.cursor/rules/taskp
 
 ## Tech stack
 
-- Windows 11 x64, C#, WPF, .NET 10, MVVM.
+- Windows 11 x64, C#, WPF (+ WPF-UI Fluent controls), .NET 10, MVVM.
 - SQLite as the *sole authoritative live database*, located in `%LOCALAPPDATA%\TaskPane\`.
 - Offline-first, no cloud account, server, telemetry or network dependency.
-- Portable, validated exports and consistent backups in the **resolved Windows Documents known folder**, which may be redirected to a network path (Phase 6). Work continues even when that path is unavailable.
-- Unit/integration tests for business rules; manual Windows UI verification.
+- Portable, validated exports and consistent backups in the **resolved Windows Documents known folder**, which may be redirected to a network path. Work continues even when that path is unavailable.
+- Unit/integration tests for business rules; manual Windows UI verification ([SUPPORT.md](SUPPORT.md)).
 
 ## Solution layout
 
@@ -30,12 +30,14 @@ TaskPane.sln
 src/
   TaskPane.App/             # WPF overlay, manager, tray, DI bootstrap
   TaskPane.Core/            # Entities, enums, validation, interfaces
-  TaskPane.Application/     # Task, focus, organization, hotkey settings services
-  TaskPane.Infrastructure/  # SQLite, migrations, local paths
+  TaskPane.Application/     # Task, focus, organization, settings services
+  TaskPane.Infrastructure/  # SQLite, migrations, local paths, logging
 tests/
   TaskPane.Core.Tests/
   TaskPane.Application.Tests/
   TaskPane.Infrastructure.Tests/
+scripts/
+  publish-win-x64.sh
 docs/
 ```
 
@@ -49,6 +51,23 @@ dotnet test TaskPane.sln -c Release
 
 The WPF app targets `net10.0-windows`. On non-Windows hosts, library and test projects still build/test with `EnableWindowsTargeting` set in `Directory.Build.props`; full WPF UI verification requires Windows 11.
 
+## Release publish (self-contained win-x64)
+
+```bash
+./scripts/publish-win-x64.sh
+# or:
+dotnet publish src/TaskPane.App/TaskPane.App.csproj -c Release -r win-x64 --self-contained true -o artifacts/publish/win-x64
+```
+
+Copy the output folder to a user-writable location and run `TaskPane.exe`. **No admin rights** are required for normal use. v1 does **not** ship an installer or code signing; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LICENSE](LICENSE).
+
+## Shipping notes (Phase 7)
+
+- Opt-in per-user autostart (HKCU Run), theme preference, text scale, privacy-filtered file logs.
+- Crash/unclean-exit recovery notice; LocalAppData writability probe.
+- Multi-monitor placement restore when a saved monitor disappears.
+- Public repository name remains `TaskPane` pending any later branding decision.
+
 ## Explicitly out of scope for v1
 
 - Multi-PC or simultaneous-user synchronization and conflict resolution.
@@ -56,5 +75,6 @@ The WPF app targets `net10.0-windows`. On non-Windows hosts, library and test pr
 - Multi-level subtask nesting: exactly one child level is supported.
 - Automatic AI processing of private task notes.
 - Automatic project planning or a Gantt chart.
+- Click-through overlay; signed MSIX installer (deferred).
 
 See [Decision log](docs/DECISIONS.md) for current assumptions to validate later.

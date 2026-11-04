@@ -58,7 +58,7 @@ public partial class App : System.Windows.Application
             System.Windows.MessageBox.Show(
                 $"TaskPane cannot write to its local data folder.\n\n{dataProbe.Error}\n\nNo admin rights are required; check folder permissions for this Windows profile.",
                 "TaskPane",
-                MessageBoxButton.OK,
+                System.Windows.MessageBoxButton.OK,
                 MessageBoxImage.Error);
             Shutdown();
             return;

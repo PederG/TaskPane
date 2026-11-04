@@ -5,6 +5,7 @@ TaskPane redistributes or links the following open-source components. Licenses w
 | Package | Version (pinned) | License |
 |---|---|---|
 | CommunityToolkit.Mvvm | 8.4.0 | MIT |
+| WPF-UI (lepoco) | 4.3.0 | MIT |
 | Microsoft.Data.Sqlite (+ Core) | 10.0.14 | MIT |
 | Microsoft.Extensions.* (DI, Hosting, Logging, Configuration, Options, …) | 10.0.14 | MIT |
 | SQLitePCLRaw.bundle_e_sqlite3 (+ core/provider/lib) | 2.1.13 | Apache-2.0 |
