@@ -1,0 +1,212 @@
+using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using TaskPane.Application.Models;
+using TaskPane.Application.Services;
+using TaskPane.Core.Entities;
+using TaskPane.Core.Enums;
+using TaskPane.Core.Ids;
+
+namespace TaskPane.App.ViewModels;
+
+public partial class OverlayViewModel : ObservableObject
+{
+    private readonly TaskService _taskService;
+    private readonly OverlaySettingsService _overlaySettings;
+    private readonly HashSet<TaskId> _expanded = [];
+
+    public OverlayViewModel(TaskService taskService, OverlaySettingsService overlaySettings)
+    {
+        _taskService = taskService;
+        _overlaySettings = overlaySettings;
+    }
+
+    public ObservableCollection<TaskRowViewModel> VisibleTasks { get; } = [];
+
+    [ObservableProperty]
+    private FocusBucket _selectedFocus = FocusBucket.Today;
+
+    [ObservableProperty]
+    private string _quickAddText = string.Empty;
+
+    [ObservableProperty]
+    private string _statusMessage = string.Empty;
+
+    [ObservableProperty]
+    private double _opacity = 0.92;
+
+    [ObservableProperty]
+    private bool _topmost = true;
+
+    [ObservableProperty]
+    private OverlayPlacement _placement = new();
+
+    public event Action? OpenManagerRequested;
+    public event Action? QuitRequested;
+    public Func<string, int, Task<ParentCompletionChoice>>? ConfirmParentCompletion { get; set; }
+
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        Placement = await _overlaySettings.GetAsync(cancellationToken).ConfigureAwait(true);
+        Opacity = Placement.Opacity;
+        Topmost = Placement.Topmost;
+        await RefreshAsync(cancellationToken).ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private async Task RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        var roots = await _taskService.ListVisibleRootsAsync(SelectedFocus, cancellationToken).ConfigureAwait(true);
+        VisibleTasks.Clear();
+
+        foreach (var root in roots)
+        {
+            var progress = await _taskService.GetProgressAsync(root.Id, cancellationToken).ConfigureAwait(true);
+            var expanded = _expanded.Contains(root.Id);
+            VisibleTasks.Add(new TaskRowViewModel(root, progress, expanded));
+
+            if (!expanded)
+            {
+                continue;
+            }
+
+            var children = await _taskService.ListChildrenAsync(root.Id, cancellationToken).ConfigureAwait(true);
+            foreach (var child in children.Where(c => !c.IsCompleted || expanded))
+            {
+                VisibleTasks.Add(new TaskRowViewModel(child));
+            }
+        }
+    }
+
+    partial void OnSelectedFocusChanged(FocusBucket value)
+        => _ = RefreshAsync();
+
+    [RelayCommand]
+    private async Task QuickAddAsync()
+    {
+        if (string.IsNullOrWhiteSpace(QuickAddText))
+        {
+            return;
+        }
+
+        // Phase 1: quick add always captures into Inbox.
+        await _taskService.CreateAsync(new CreateTaskRequest
+        {
+            Title = QuickAddText,
+            FocusBucket = FocusBucket.Inbox
+        }).ConfigureAwait(true);
+
+        QuickAddText = string.Empty;
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private async Task ToggleExpandAsync(TaskRowViewModel? row)
+    {
+        if (row is null || row.IsSubtask)
+        {
+            return;
+        }
+
+        if (!_expanded.Add(row.Id))
+        {
+            _expanded.Remove(row.Id);
+        }
+
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private async Task ToggleCompleteAsync(TaskRowViewModel? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        if (row.IsCompleted)
+        {
+            await _taskService.ReopenAsync(row.Id).ConfigureAwait(true);
+            await RefreshAsync().ConfigureAwait(true);
+            return;
+        }
+
+        var result = await _taskService.CompleteAsync(row.Id, null).ConfigureAwait(true);
+        if (!result.Completed && result.IncompleteChildCount > 0)
+        {
+            var choice = ParentCompletionChoice.Cancel;
+            if (ConfirmParentCompletion is not null)
+            {
+                choice = await ConfirmParentCompletion(
+                    $"This task has {result.IncompleteChildCount} incomplete subtask(s). Complete parent only, complete all, or cancel?",
+                    result.IncompleteChildCount).ConfigureAwait(true);
+            }
+
+            if (choice == ParentCompletionChoice.Cancel)
+            {
+                return;
+            }
+
+            await _taskService.CompleteAsync(row.Id, choice).ConfigureAwait(true);
+        }
+
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private async Task SoftDeleteAsync(TaskRowViewModel? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        await _taskService.SoftDeleteAsync(row.Id).ConfigureAwait(true);
+        StatusMessage = "Task moved to recycle bin.";
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private async Task AddSubtaskAsync(TaskRowViewModel? row)
+    {
+        if (row is null || row.IsSubtask)
+        {
+            return;
+        }
+
+        await _taskService.CreateAsync(new CreateTaskRequest
+        {
+            Title = "New subtask",
+            ParentTaskId = row.Id
+        }).ConfigureAwait(true);
+
+        _expanded.Add(row.Id);
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private void OpenManager() => OpenManagerRequested?.Invoke();
+
+    [RelayCommand]
+    private void Quit() => QuitRequested?.Invoke();
+
+    public async Task PersistPlacementAsync(OverlayPlacement placement, CancellationToken cancellationToken = default)
+    {
+        placement.Opacity = Opacity;
+        placement.Topmost = Topmost;
+        Placement = placement;
+        await _overlaySettings.SaveAsync(placement, cancellationToken).ConfigureAwait(true);
+    }
+
+    partial void OnOpacityChanged(double value)
+    {
+        Placement.Opacity = value;
+        _ = _overlaySettings.SaveAsync(Placement);
+    }
+
+    partial void OnTopmostChanged(bool value)
+    {
+        Placement.Topmost = value;
+        _ = _overlaySettings.SaveAsync(Placement);
+    }
+}
