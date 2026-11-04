@@ -1,0 +1,28 @@
+# .NET / Visual Studio / Rider / Cursor
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+TestResults/
+coverage/
+artifacts/
+.vscode/
+.cursor/index/
+
+# Local app data / databases / exports (never commit task content)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.db3
+*.bak
+*.log
+*.zip
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
