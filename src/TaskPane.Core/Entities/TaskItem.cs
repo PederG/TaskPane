@@ -13,6 +13,20 @@ public sealed class TaskItem
     public FocusBucket FocusBucket { get; set; } = FocusBucket.Inbox;
     public TaskLifecycleStatus Status { get; set; } = TaskLifecycleStatus.Open;
     public double ManualSortKey { get; set; }
+
+    /// <summary>ISO calendar date (YYYY-MM-DD). Never treat as midnight UTC.</summary>
+    public string? DeadlineLocalDate { get; set; }
+
+    /// <summary>Optional local time (HH:mm or HH:mm:ss). Null means date-only deadline.</summary>
+    public string? DeadlineLocalTime { get; set; }
+
+    public string? DeadlineTimeZoneId { get; set; }
+    public DateTimeOffset? SleepUntilUtc { get; set; }
+    public bool SleepIndefinitely { get; set; }
+    public string? WaitingFor { get; set; }
+    public DateTimeOffset? WaitingFollowUpUtc { get; set; }
+    public ProjectId? ProjectId { get; set; }
+
     public DateTimeOffset CreatedUtc { get; set; }
     public DateTimeOffset UpdatedUtc { get; set; }
     public DateTimeOffset? CompletedUtc { get; set; }
@@ -23,4 +37,6 @@ public sealed class TaskItem
     public bool IsDeleted => DeletedUtc is not null;
     public bool IsRoot => ParentTaskId is null;
     public bool IsCompleted => Status == TaskLifecycleStatus.Completed;
+    public bool HasDeadline => !string.IsNullOrWhiteSpace(DeadlineLocalDate);
+    public bool IsWaiting => !string.IsNullOrWhiteSpace(WaitingFor);
 }

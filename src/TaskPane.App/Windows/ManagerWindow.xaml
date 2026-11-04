@@ -3,12 +3,13 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:enums="clr-namespace:TaskPane.Core.Enums;assembly=TaskPane.Core"
         Title="TaskPane — Manager"
-        Height="640"
-        Width="960"
-        MinWidth="720"
-        MinHeight="480"
+        Height="720"
+        Width="1100"
+        MinWidth="860"
+        MinHeight="520"
         FontFamily="Segoe UI Variable Text, Segoe UI"
-        Background="#FFF7F8FA">
+        Background="#FFF7F8FA"
+        AllowDrop="True">
   <DockPanel Margin="12">
     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
       <Button DockPanel.Dock="Right"
@@ -19,20 +20,59 @@
       <TextBlock Text="TaskPane Manager" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
     </DockPanel>
 
-    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
-      <ComboBox Width="140" SelectedItem="{Binding SelectedFocus}" Margin="0,0,8,0">
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+      <ComboBox Width="120" SelectedItem="{Binding SelectedFocus}" Margin="0,0,8,0">
         <enums:FocusBucket>Inbox</enums:FocusBucket>
         <enums:FocusBucket>Today</enums:FocusBucket>
         <enums:FocusBucket>Next</enums:FocusBucket>
         <enums:FocusBucket>Someday</enums:FocusBucket>
       </ComboBox>
+      <Button Content="All focus" Margin="0,0,8,0" Padding="8,4" Command="{Binding ClearFocusFilterCommand}" />
       <Button Content="Tasks" Margin="0,0,8,0" Command="{Binding ShowTasksCommand}" Padding="10,4" />
       <Button Content="Recycle bin" Command="{Binding ShowRecycleBinCommand}" Padding="10,4" />
+      <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#FF555555" />
     </StackPanel>
+
+    <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="2*" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+      <TextBox Grid.Column="0"
+               Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+               Padding="8,6"
+               Margin="0,0,8,0"
+               AutomationProperties.Name="Search title and notes" />
+      <ComboBox Grid.Column="1"
+                ItemsSource="{Binding Projects}"
+                SelectedItem="{Binding FilterProject}"
+                DisplayMemberPath="Name"
+                Margin="0,0,8,0"
+                IsEditable="False" />
+      <ComboBox Grid.Column="2"
+                ItemsSource="{Binding Tags}"
+                SelectedItem="{Binding FilterTag}"
+                DisplayMemberPath="Name"
+                Margin="0,0,8,0" />
+      <CheckBox Grid.Column="3" Content="Include sleeping" IsChecked="{Binding IncludeSleeping}" Margin="0,0,8,0" VerticalAlignment="Center" />
+      <CheckBox Grid.Column="4" Content="Only sleeping" IsChecked="{Binding OnlySleeping}" Margin="0,0,8,0" VerticalAlignment="Center" />
+      <CheckBox Grid.Column="5" Content="Only waiting" IsChecked="{Binding OnlyWaiting}" Margin="0,0,8,0" VerticalAlignment="Center" />
+      <ComboBox Grid.Column="6" SelectedItem="{Binding SortMode}">
+        <enums:TaskSortMode>Manual</enums:TaskSortMode>
+        <enums:TaskSortMode>Priority</enums:TaskSortMode>
+        <enums:TaskSortMode>Deadline</enums:TaskSortMode>
+        <enums:TaskSortMode>CreatedDesc</enums:TaskSortMode>
+      </ComboBox>
+    </Grid>
 
     <Grid>
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="1.2*" />
+        <ColumnDefinition Width="1.15*" />
         <ColumnDefinition Width="12" />
         <ColumnDefinition Width="*" />
       </Grid.ColumnDefinitions>
@@ -51,9 +91,19 @@
                   Command="{Binding CreateTaskCommand}" />
         </Grid>
 
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
+          <Button Content="↑" Width="32" Margin="0,0,4,0" Command="{Binding MoveSelectedUpCommand}" ToolTip="Move up" />
+          <Button Content="↓" Width="32" Margin="0,0,8,0" Command="{Binding MoveSelectedDownCommand}" ToolTip="Move down" />
+          <Button Content="Promote" Margin="0,0,8,0" Padding="8,4" Command="{Binding PromoteSelectedCommand}" />
+        </StackPanel>
+
         <ListBox x:Name="TaskList"
                  ItemsSource="{Binding Tasks}"
-                 SelectedItem="{Binding SelectedTask}">
+                 SelectedItem="{Binding SelectedTask}"
+                 AllowDrop="True"
+                 PreviewMouseMove="TaskList_OnPreviewMouseMove"
+                 Drop="TaskList_OnDrop"
+                 DragOver="TaskList_OnDragOver">
           <ListBox.Style>
             <Style TargetType="ListBox">
               <Setter Property="Visibility" Value="Visible" />
@@ -67,8 +117,22 @@
           <ListBox.ItemTemplate>
             <DataTemplate>
               <StackPanel Margin="0,2">
-                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding ProgressText}" FontSize="11" Foreground="#FF555555" />
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold">
+                  <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsSubtask}" Value="True">
+                          <Setter Property="Margin" Value="18,0,0,0" />
+                          <Setter Property="FontWeight" Value="Normal" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsOverdue}" Value="True">
+                          <Setter Property="Foreground" Value="#FFB00020" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </TextBlock.Style>
+                </TextBlock>
+                <TextBlock Text="{Binding MetaText}" FontSize="11" Foreground="#FF555555" />
               </StackPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>
@@ -98,45 +162,93 @@
         </ListBox>
       </DockPanel>
 
-      <Border Grid.Column="2" Background="White" BorderBrush="#22000000" BorderThickness="1" Padding="12">
-        <DockPanel>
-          <TextBlock DockPanel.Dock="Top" Text="Task details" FontWeight="SemiBold" Margin="0,0,0,10" />
-          <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button Content="Add subtask" Margin="0,0,8,0" Padding="10,6"
-                    Command="{Binding AddSubtaskToSelectedCommand}" />
-            <Button Content="Complete" Margin="0,0,8,0" Padding="10,6"
-                    Command="{Binding CompleteSelectedCommand}" />
-            <Button Content="Delete" Margin="0,0,8,0" Padding="10,6"
-                    Command="{Binding SoftDeleteSelectedCommand}" />
-            <Button Content="Save" Padding="10,6" Command="{Binding SaveSelectedCommand}" />
-          </StackPanel>
-          <StackPanel>
-            <TextBlock Text="Title" Margin="0,0,0,4" />
-            <TextBox Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,10" />
-            <TextBlock Text="Notes" Margin="0,0,0,4" />
-            <TextBox Text="{Binding EditNotes, UpdateSourceTrigger=PropertyChanged}"
-                     AcceptsReturn="True"
-                     TextWrapping="Wrap"
-                     Height="140"
-                     Padding="8,6"
-                     VerticalScrollBarVisibility="Auto"
-                     Margin="0,0,0,10" />
-            <TextBlock Text="Priority" Margin="0,0,0,4" />
-            <ComboBox SelectedItem="{Binding EditPriority}" Margin="0,0,0,10">
-              <enums:TaskPriority>High</enums:TaskPriority>
-              <enums:TaskPriority>Normal</enums:TaskPriority>
-              <enums:TaskPriority>Low</enums:TaskPriority>
-            </ComboBox>
-            <TextBlock Text="Focus" Margin="0,0,0,4" />
-            <ComboBox SelectedItem="{Binding EditFocus}">
-              <enums:FocusBucket>Inbox</enums:FocusBucket>
-              <enums:FocusBucket>Today</enums:FocusBucket>
-              <enums:FocusBucket>Next</enums:FocusBucket>
-              <enums:FocusBucket>Someday</enums:FocusBucket>
-            </ComboBox>
-          </StackPanel>
-        </DockPanel>
-      </Border>
+      <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+        <Border Background="White" BorderBrush="#22000000" BorderThickness="1" Padding="12">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="Task details" FontWeight="SemiBold" Margin="0,0,0,10" />
+            <WrapPanel DockPanel.Dock="Bottom" HorizontalAlignment="Right" Margin="0,12,0,0">
+              <Button Content="Add subtask" Margin="0,0,8,8" Padding="10,6"
+                      Command="{Binding AddSubtaskToSelectedCommand}" />
+              <Button Content="Sleep 1h" Margin="0,0,8,8" Padding="10,6"
+                      Command="{Binding SleepSelectedCommand}" CommandParameter="OneHour" />
+              <Button Content="Sleep ∞" Margin="0,0,8,8" Padding="10,6"
+                      Command="{Binding SleepSelectedCommand}" CommandParameter="Indefinitely" />
+              <Button Content="Wake" Margin="0,0,8,8" Padding="10,6"
+                      Command="{Binding WakeSelectedCommand}" />
+              <Button Content="Complete" Margin="0,0,8,8" Padding="10,6"
+                      Command="{Binding CompleteSelectedCommand}" />
+              <Button Content="Delete" Margin="0,0,8,8" Padding="10,6"
+                      Command="{Binding SoftDeleteSelectedCommand}" />
+              <Button Content="Save" Margin="0,0,0,8" Padding="10,6" Command="{Binding SaveSelectedCommand}" />
+            </WrapPanel>
+            <StackPanel>
+              <TextBlock Text="Title" Margin="0,0,0,4" />
+              <TextBox Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,10" />
+              <TextBlock Text="Notes (Markdown / plain text)" Margin="0,0,0,4" />
+              <TextBox Text="{Binding EditNotes, UpdateSourceTrigger=PropertyChanged}"
+                       AcceptsReturn="True"
+                       AcceptsTab="True"
+                       TextWrapping="Wrap"
+                       Height="150"
+                       Padding="8,6"
+                       VerticalScrollBarVisibility="Auto"
+                       FontFamily="Cascadia Mono, Consolas, Courier New"
+                       Margin="0,0,0,10"
+                       AutomationProperties.Name="Task notes editor" />
+              <TextBlock Text="Priority" Margin="0,0,0,4" />
+              <ComboBox SelectedItem="{Binding EditPriority}" Margin="0,0,0,10">
+                <enums:TaskPriority>High</enums:TaskPriority>
+                <enums:TaskPriority>Normal</enums:TaskPriority>
+                <enums:TaskPriority>Low</enums:TaskPriority>
+              </ComboBox>
+              <TextBlock Text="Focus" Margin="0,0,0,4" />
+              <ComboBox SelectedItem="{Binding EditFocus}" Margin="0,0,0,10">
+                <enums:FocusBucket>Inbox</enums:FocusBucket>
+                <enums:FocusBucket>Today</enums:FocusBucket>
+                <enums:FocusBucket>Next</enums:FocusBucket>
+                <enums:FocusBucket>Someday</enums:FocusBucket>
+              </ComboBox>
+              <TextBlock Text="Deadline date (YYYY-MM-DD, optional)" Margin="0,0,0,4" />
+              <TextBox Text="{Binding EditDeadlineDate, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,8" />
+              <TextBlock Text="Deadline time (optional; leave empty for date-only)" Margin="0,0,0,4" />
+              <TextBox Text="{Binding EditDeadlineTime, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,10" />
+              <TextBlock Text="Waiting for (distinct from sleep / blocked)" Margin="0,0,0,4" />
+              <TextBox Text="{Binding EditWaitingFor, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,8" />
+              <TextBlock Text="Waiting follow-up (UTC, optional)" Margin="0,0,0,4" />
+              <TextBox Text="{Binding EditWaitingFollowUp, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,10" />
+              <TextBlock Text="Project" Margin="0,0,0,4" />
+              <ComboBox ItemsSource="{Binding Projects}"
+                        SelectedItem="{Binding EditProject}"
+                        DisplayMemberPath="Name"
+                        Margin="0,0,0,10" />
+              <TextBlock Text="Tags (comma-separated)" Margin="0,0,0,4" />
+              <TextBox Text="{Binding EditTagsCsv, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,16" />
+
+              <TextBlock Text="Projects / tags" FontWeight="SemiBold" Margin="0,0,0,8" />
+              <DockPanel Margin="0,0,0,8">
+                <Button DockPanel.Dock="Right" Content="Add project" Margin="8,0,0,0" Padding="8,4"
+                        Command="{Binding CreateProjectCommand}" />
+                <TextBox Text="{Binding NewProjectName, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" />
+              </DockPanel>
+              <DockPanel Margin="0,0,0,16">
+                <Button DockPanel.Dock="Right" Content="Add tag" Margin="8,0,0,0" Padding="8,4"
+                        Command="{Binding CreateTagCommand}" />
+                <TextBox Text="{Binding NewTagName, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" />
+              </DockPanel>
+
+              <TextBlock Text="Quick-capture hotkey" FontWeight="SemiBold" Margin="0,0,0,8" />
+              <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Save hotkey" Margin="8,0,0,0" Padding="8,4"
+                        Command="{Binding SaveHotkeyCommand}" />
+                <CheckBox DockPanel.Dock="Right" Content="Enabled" IsChecked="{Binding HotkeyEnabled}"
+                          VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBox Text="{Binding HotkeyLabel, UpdateSourceTrigger=PropertyChanged}" Padding="8,6"
+                         ToolTip="Examples: Ctrl+Alt+Space, Ctrl+Shift+Q" />
+              </DockPanel>
+            </StackPanel>
+          </DockPanel>
+        </Border>
+      </ScrollViewer>
     </Grid>
   </DockPanel>
 </Window>

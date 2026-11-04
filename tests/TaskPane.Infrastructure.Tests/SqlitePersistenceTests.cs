@@ -1,9 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using TaskPane.Application.DependencyInjection;
 using TaskPane.Application.Models;
 using TaskPane.Application.Services;
 using TaskPane.Core.Enums;
-using TaskPane.Core.Interfaces;
 using TaskPane.Infrastructure.DependencyInjection;
 using TaskPane.Infrastructure.Migrations;
 using TaskPane.Infrastructure.Paths;
@@ -113,14 +113,70 @@ public sealed class SqlitePersistenceTests
         }
     }
 
+    [Fact]
+    public async Task Phase2_migration_persists_deadline_sleep_tags_and_projects()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "TaskPaneTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var dbPath = Path.Combine(root, "tasks.db");
+
+        try
+        {
+            await using var services = Build(dbPath);
+            await services.GetRequiredService<SqliteMigrator>().MigrateAsync();
+            var org = services.GetRequiredService<OrganizationService>();
+            var tasks = services.GetRequiredService<TaskService>();
+
+            var project = await org.CreateProjectAsync("Infra");
+            var tag = await org.CreateTagAsync("urgent");
+            var created = await tasks.CreateAsync(new CreateTaskRequest
+            {
+                Title = "Rich task",
+                Notes = "markdown **note**",
+                FocusBucket = FocusBucket.Today,
+                DeadlineLocalDate = "2026-11-10",
+                ProjectId = project.Id
+            });
+            await tasks.UpdateAsync(new UpdateTaskRequest
+            {
+                Id = created.Id,
+                Title = created.Title,
+                Notes = created.Notes,
+                Priority = TaskPriority.High,
+                FocusBucket = FocusBucket.Today,
+                DeadlineLocalDate = "2026-11-10",
+                ProjectId = project.Id,
+                TagIds = [tag.Id],
+                WaitingFor = "Change window"
+            });
+            await tasks.SleepAsync(new SleepTaskRequest
+            {
+                Id = created.Id,
+                Preset = SleepPreset.Indefinitely
+            });
+
+            var loaded = await tasks.GetAsync(created.Id);
+            Assert.NotNull(loaded);
+            Assert.Equal("2026-11-10", loaded!.DeadlineLocalDate);
+            Assert.True(loaded.SleepIndefinitely);
+            Assert.Equal("Change window", loaded.WaitingFor);
+            Assert.Equal(project.Id, loaded.ProjectId);
+            Assert.Equal([tag.Id], await org.GetTaskTagIdsAsync(created.Id));
+            Assert.Empty(await tasks.ListVisibleRootsAsync(FocusBucket.Today));
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* ignore */ }
+        }
+    }
+
     private static ServiceProvider Build(string dbPath)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
         services.AddTaskPaneInfrastructure(dbPath);
-        services.AddSingleton<TaskService>();
-        services.AddSingleton<OverlaySettingsService>();
+        services.AddTaskPaneApplication();
         return services.BuildServiceProvider();
     }
 }

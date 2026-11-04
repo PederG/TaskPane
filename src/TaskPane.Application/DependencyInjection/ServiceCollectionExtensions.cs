@@ -7,6 +7,9 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddTaskPaneApplication(this IServiceCollection services)
     {
+        services.AddSingleton<FocusService>();
+        services.AddSingleton<OrganizationService>();
+        services.AddSingleton<HotkeySettingsService>();
         services.AddSingleton<TaskService>();
         services.AddSingleton<OverlaySettingsService>();
         return services;

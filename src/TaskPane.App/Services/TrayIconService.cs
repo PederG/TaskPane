@@ -10,6 +10,7 @@ public sealed class TrayIconService : IDisposable
 
     public event Action? ShowOverlayRequested;
     public event Action? OpenManagerRequested;
+    public event Action? ShowQuickCaptureRequested;
     public event Action? QuitRequested;
 
     public void Initialize()
@@ -24,6 +25,7 @@ public sealed class TrayIconService : IDisposable
         var menu = new ContextMenuStrip();
         menu.Items.Add("Show overlay", null, (_, _) => ShowOverlayRequested?.Invoke());
         menu.Items.Add("Open manager", null, (_, _) => OpenManagerRequested?.Invoke());
+        menu.Items.Add("Quick capture", null, (_, _) => ShowQuickCaptureRequested?.Invoke());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quit", null, (_, _) => QuitRequested?.Invoke());
         _notifyIcon.ContextMenuStrip = menu;

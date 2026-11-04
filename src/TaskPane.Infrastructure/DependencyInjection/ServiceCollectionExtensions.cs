@@ -15,10 +15,13 @@ public static class ServiceCollectionExtensions
         var path = databasePath ?? AppPaths.GetDatabasePath();
         services.AddSingleton(new SqliteConnectionFactory(path));
         services.AddSingleton<IMigration, Migration001_InitialSchema>();
+        services.AddSingleton<IMigration, Migration002_Phase2RichEditing>();
         services.AddSingleton<SqliteMigrator>();
         services.AddSingleton<SqliteUnitOfWork>();
         services.AddSingleton<IUnitOfWork>(sp => sp.GetRequiredService<SqliteUnitOfWork>());
         services.AddSingleton<ITaskRepository, SqliteTaskRepository>();
+        services.AddSingleton<IProjectRepository, SqliteProjectRepository>();
+        services.AddSingleton<ITagRepository, SqliteTagRepository>();
         services.AddSingleton<ISettingsRepository, SqliteSettingsRepository>();
         return services;
     }

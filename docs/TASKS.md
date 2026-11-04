@@ -34,16 +34,17 @@
 
 ## Phase 2 — Rich task editing and daily focus
 
-- [ ] Markdown/plain-text notes editor and compact note preview/popover.
-- [ ] Tags and optional projects, filter/search by title and notes.
-- [ ] Optional date-only and date/time deadlines; overdue highlighting; no forced priority change.
-- [ ] Sleep task for presets, custom date/time or indefinitely; sleep/wake parent subtree behavior.
-- [ ] Waiting-for text/follow-up date; clear distinction from sleep and blocked.
-- [ ] Full manager filters and drag/drop reordering/moving one-level subtasks safely.
-- [ ] Global hotkey quick capture, conflict handling, customizable setting.
-- [ ] Automated tests: undated priority sorting, sleep/wake, focus/filter combinations, move constraints.
+- [x] Markdown/plain-text notes editor and compact note preview/popover. *(manager monospace notes editor + overlay title click preview; interactive Windows check pending)*
+- [x] Tags and optional projects, filter/search by title and notes.
+- [x] Optional date-only and date/time deadlines; overdue highlighting; no forced priority change.
+- [x] Sleep task for presets, custom date/time or indefinitely; sleep/wake parent subtree behavior.
+- [x] Waiting-for text/follow-up date; clear distinction from sleep and blocked.
+- [x] Full manager filters and drag/drop reordering/moving one-level subtasks safely. *(reorder + move APIs tested; drag-drop UI needs Windows manual check)*
+- [x] Global hotkey quick capture, conflict handling, customizable setting. *(Win32 RegisterHotKey + tray fallback; registration needs Windows manual check)*
+- [x] Automated tests: undated priority sorting, sleep/wake, focus/filter combinations, move constraints.
 
-**Accept:** All operations work offline; sleeping and due dates are independent; a task can be captured with just title and Enter.
+**Accept:** All operations work offline; sleeping and due dates are independent; a task can be captured with just title and Enter.  
+**Verified automatically:** domain/filter/sleep/deadline/move rules + SQLite migration 002 persistence. **Not verified here:** interactive WPF notes popover, drag/drop, and global hotkey on Windows 11.
 
 ## Phase 3 — Manual time tracking
 

@@ -22,6 +22,7 @@ public partial class OverlayViewModel : ObservableObject
     }
 
     public ObservableCollection<TaskRowViewModel> VisibleTasks { get; } = [];
+    public ObservableCollection<TaskRowViewModel> SleepingTasks { get; } = [];
 
     [ObservableProperty]
     private FocusBucket _selectedFocus = FocusBucket.Today;
@@ -40,6 +41,18 @@ public partial class OverlayViewModel : ObservableObject
 
     [ObservableProperty]
     private OverlayPlacement _placement = new();
+
+    [ObservableProperty]
+    private TaskRowViewModel? _notePreviewTask;
+
+    [ObservableProperty]
+    private bool _notePopoverOpen;
+
+    [ObservableProperty]
+    private bool _showSleeping;
+
+    [ObservableProperty]
+    private bool _hasSleepingTasks;
 
     public event Action? OpenManagerRequested;
     public event Action? QuitRequested;
@@ -70,12 +83,24 @@ public partial class OverlayViewModel : ObservableObject
                 continue;
             }
 
-            var children = await _taskService.ListChildrenAsync(root.Id, cancellationToken).ConfigureAwait(true);
-            foreach (var child in children.Where(c => !c.IsCompleted || expanded))
+            var children = await _taskService.QueryChildrenAsync(
+                root.Id,
+                new TaskQuery { OverlayVisibility = true, FocusBucket = SelectedFocus },
+                cancellationToken).ConfigureAwait(true);
+            foreach (var child in children)
             {
                 VisibleTasks.Add(new TaskRowViewModel(child));
             }
         }
+
+        SleepingTasks.Clear();
+        var sleeping = await _taskService.ListSleepingRootsAsync(cancellationToken).ConfigureAwait(true);
+        foreach (var item in sleeping.Where(t => t.FocusBucket == SelectedFocus))
+        {
+            SleepingTasks.Add(new TaskRowViewModel(item));
+        }
+
+        HasSleepingTasks = SleepingTasks.Count > 0;
     }
 
     partial void OnSelectedFocusChanged(FocusBucket value)
@@ -89,7 +114,6 @@ public partial class OverlayViewModel : ObservableObject
             return;
         }
 
-        // Phase 1: quick add always captures into Inbox.
         await _taskService.CreateAsync(new CreateTaskRequest
         {
             Title = QuickAddText,
@@ -167,6 +191,56 @@ public partial class OverlayViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task SleepAsync(TaskRowViewModel? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        await _taskService.SleepAsync(new SleepTaskRequest
+        {
+            Id = row.Id,
+            Preset = SleepPreset.OneHour
+        }).ConfigureAwait(true);
+        StatusMessage = "Task sleeping for 1 hour.";
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private async Task WakeAsync(TaskRowViewModel? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        await _taskService.WakeAsync(row.Id).ConfigureAwait(true);
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private void ShowNotes(TaskRowViewModel? row)
+    {
+        if (row is null || !row.HasNotes)
+        {
+            NotePopoverOpen = false;
+            NotePreviewTask = null;
+            return;
+        }
+
+        NotePreviewTask = row;
+        NotePopoverOpen = true;
+    }
+
+    [RelayCommand]
+    private void CloseNotes()
+    {
+        NotePopoverOpen = false;
+        NotePreviewTask = null;
+    }
+
+    [RelayCommand]
     private async Task AddSubtaskAsync(TaskRowViewModel? row)
     {
         if (row is null || row.IsSubtask)
@@ -189,6 +263,9 @@ public partial class OverlayViewModel : ObservableObject
 
     [RelayCommand]
     private void Quit() => QuitRequested?.Invoke();
+
+    [RelayCommand]
+    private void ToggleSleepingList() => ShowSleeping = !ShowSleeping;
 
     public async Task PersistPlacementAsync(OverlayPlacement placement, CancellationToken cancellationToken = default)
     {

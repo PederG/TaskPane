@@ -50,6 +50,44 @@
       </Border>
 
       <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+        <Border Background="#CC15202C"
+                Padding="10"
+                CornerRadius="6"
+                Margin="0,0,0,8"
+                Visibility="{Binding NotePopoverOpen, Converter={StaticResource BoolToVis}}">
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Content="Close" Padding="8,4" Command="{Binding CloseNotesCommand}" />
+            <StackPanel>
+              <TextBlock Text="Notes preview" Foreground="#AADDEEFF" FontSize="11" Margin="0,0,0,4" />
+              <TextBlock Text="{Binding NotePreviewTask.Title}" Foreground="White" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding NotePreviewTask.Notes}" Foreground="#EEFFFFFF" TextWrapping="Wrap" Margin="0,6,0,0" />
+            </StackPanel>
+          </DockPanel>
+        </Border>
+
+        <Button Content="{Binding SleepingTasks.Count, StringFormat=◷ {0} sleeping tasks}"
+                HorizontalAlignment="Left"
+                Margin="0,0,0,6"
+                Padding="6,3"
+                Command="{Binding ToggleSleepingListCommand}"
+                Visibility="{Binding HasSleepingTasks, Converter={StaticResource BoolToVis}}" />
+        <ListBox ItemsSource="{Binding SleepingTasks}"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 MaxHeight="100"
+                 Visibility="{Binding ShowSleeping, Converter={StaticResource BoolToVis}}">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Wake" Padding="6,2"
+                        Command="{Binding DataContext.WakeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}" />
+                <TextBlock Text="{Binding Title}" Foreground="#CCFFFFFF" />
+              </DockPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -95,6 +133,7 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
               <Button Grid.Column="0"
                       Width="22" Height="22" Padding="0"
@@ -120,27 +159,43 @@
                         VerticalAlignment="Center"
                         AutomationProperties.Name="Complete task" />
               <StackPanel Grid.Column="2" Margin="6,0,0,0">
-                <TextBlock Text="{Binding Title}" Foreground="White" TextWrapping="Wrap">
+                <TextBlock Text="{Binding Title}" TextWrapping="Wrap" Cursor="Hand"
+                           MouseLeftButtonUp="TaskTitle_OnMouseLeftButtonUp">
                   <TextBlock.Style>
                     <Style TargetType="TextBlock">
+                      <Setter Property="Foreground" Value="White" />
                       <Style.Triggers>
                         <DataTrigger Binding="{Binding IsSubtask}" Value="True">
                           <Setter Property="Margin" Value="12,0,0,0" />
                           <Setter Property="Foreground" Value="#E6FFFFFF" />
                         </DataTrigger>
+                        <DataTrigger Binding="{Binding IsOverdue}" Value="True">
+                          <Setter Property="Foreground" Value="#FFFF8A80" />
+                          <Setter Property="FontWeight" Value="SemiBold" />
+                        </DataTrigger>
                       </Style.Triggers>
                     </Style>
                   </TextBlock.Style>
                 </TextBlock>
-                <TextBlock Text="{Binding ProgressText}"
+                <TextBlock Text="{Binding MetaText}"
                            Foreground="#AADDEEFF"
+                           FontSize="11" />
+                <TextBlock Text="{Binding NotesPreview}"
+                           Foreground="#88FFFFFF"
                            FontSize="11"
-                           Visibility="{Binding HasChildren, Converter={StaticResource BoolToVis}}" />
+                           TextTrimming="CharacterEllipsis"
+                           Visibility="{Binding HasNotes, Converter={StaticResource BoolToVis}}" />
               </StackPanel>
               <Button Grid.Column="3"
+                      Content="Zzz"
+                      Width="34" Height="22" Margin="4,0"
+                      Command="{Binding DataContext.SleepCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                      CommandParameter="{Binding}"
+                      ToolTip="Sleep 1 hour"
+                      AutomationProperties.Name="Sleep task" />
+              <Button Grid.Column="4"
                       Content="+"
                       Width="26" Height="22" Margin="4,0"
-                      Visibility="{Binding IsSubtask, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"
                       Command="{Binding DataContext.AddSubtaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                       CommandParameter="{Binding}"
                       ToolTip="Add subtask"
@@ -156,7 +211,7 @@
                   </Style>
                 </Button.Style>
               </Button>
-              <Button Grid.Column="4"
+              <Button Grid.Column="5"
                       Content="⋯"
                       Width="28" Height="22"
                       Command="{Binding DataContext.SoftDeleteCommand, RelativeSource={RelativeSource AncestorType=Window}}"
