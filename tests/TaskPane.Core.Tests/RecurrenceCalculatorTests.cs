@@ -104,4 +104,96 @@ public sealed class RecurrenceCalculatorTests
         var utc = LocalScheduleTime.ToUtc(new DateOnly(2026, 11, 1), new TimeOnly(1, 30), tz);
         Assert.False(tz.IsDaylightSavingTime(utc.UtcDateTime));
     }
+
+    [Fact]
+    public void Every_n_weeks_and_months_respect_interval()
+    {
+        var weekly = new RecurrenceRule
+        {
+            Frequency = RecurrenceFrequency.Weekly,
+            Interval = 2,
+            Weekdays = [(int)DayOfWeek.Wednesday],
+            AnchorLocalDate = "2026-11-04"
+        };
+        var weeks = RecurrenceCalculator.EnumerateFrom(weekly, new DateOnly(2026, 11, 1)).Take(3).ToList();
+        Assert.Equal(
+            [new DateOnly(2026, 11, 4), new DateOnly(2026, 11, 18), new DateOnly(2026, 12, 2)],
+            weeks);
+
+        var monthly = new RecurrenceRule
+        {
+            Frequency = RecurrenceFrequency.Monthly,
+            MonthlyMode = MonthlyRecurrenceMode.DayOfMonth,
+            DayOfMonth = 15,
+            Interval = 3,
+            AnchorLocalDate = "2026-01-15"
+        };
+        var months = RecurrenceCalculator.EnumerateFrom(monthly, new DateOnly(2026, 1, 1)).Take(3).ToList();
+        Assert.Equal(
+            [new DateOnly(2026, 1, 15), new DateOnly(2026, 4, 15), new DateOnly(2026, 7, 15)],
+            months);
+    }
+
+    [Fact]
+    public void Last_weekday_of_month_and_boundaries()
+    {
+        // February 2024 (leap): last Friday is Feb 23.
+        Assert.Equal(
+            new DateOnly(2024, 2, 23),
+            RecurrenceCalculator.ComputeNthWeekday(2024, 2, -1, DayOfWeek.Friday));
+
+        var rule = new RecurrenceRule
+        {
+            Frequency = RecurrenceFrequency.Monthly,
+            MonthlyMode = MonthlyRecurrenceMode.NthWeekday,
+            WeekOfMonth = -1,
+            WeekdayOfMonth = DayOfWeek.Monday,
+            Interval = 1,
+            AnchorLocalDate = "2026-01-26"
+        };
+        var dates = RecurrenceCalculator.EnumerateFrom(rule, new DateOnly(2026, 1, 1)).Take(3).ToList();
+        Assert.Equal(
+            [new DateOnly(2026, 1, 26), new DateOnly(2026, 2, 23), new DateOnly(2026, 3, 30)],
+            dates);
+    }
+
+    [Fact]
+    public void Every_n_days_custom_interval()
+    {
+        var rule = new RecurrenceRule
+        {
+            Frequency = RecurrenceFrequency.CustomIntervalDays,
+            Interval = 5,
+            AnchorLocalDate = "2026-11-01"
+        };
+        var dates = RecurrenceCalculator.EnumerateFrom(rule, new DateOnly(2026, 11, 1)).Take(3).ToList();
+        Assert.Equal(
+            [new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 6), new DateOnly(2026, 11, 11)],
+            dates);
+    }
+
+    [Fact]
+    public void Formatter_summarizes_and_validates()
+    {
+        var rule = new RecurrenceRule
+        {
+            Frequency = RecurrenceFrequency.Monthly,
+            MonthlyMode = MonthlyRecurrenceMode.NthWeekday,
+            WeekOfMonth = 1,
+            WeekdayOfMonth = DayOfWeek.Monday,
+            Interval = 1,
+            AnchorLocalDate = "2026-11-02"
+        };
+        Assert.True(RecurrenceRuleFormatter.TryValidate(rule, out var error));
+        Assert.Null(error);
+        Assert.Contains("first Monday", RecurrenceRuleFormatter.Summarize(rule), StringComparison.OrdinalIgnoreCase);
+
+        Assert.False(RecurrenceRuleFormatter.TryValidate(new RecurrenceRule
+        {
+            Frequency = RecurrenceFrequency.SelectedWeekdays,
+            Weekdays = [],
+            AnchorLocalDate = "2026-11-04"
+        }, out var invalid));
+        Assert.False(string.IsNullOrWhiteSpace(invalid));
+    }
 }

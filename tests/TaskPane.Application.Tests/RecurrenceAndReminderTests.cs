@@ -227,6 +227,125 @@ public sealed class RecurrenceAndReminderTests
         Assert.Equal(feb.Id, again!.Id);
     }
 
+    [Fact]
+    public async Task Missed_occurrences_do_not_accumulate_while_open_exists()
+    {
+        var harness = CreateHarness(DateTimeOffset.Parse("2026-11-01T12:00:00Z"));
+        var seed = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Daily catch-up" });
+        var template = await harness.Recurrence.AttachAsync(new AttachRecurrenceRequest
+        {
+            TaskId = seed.Id,
+            Rule = new RecurrenceRule
+            {
+                Frequency = RecurrenceFrequency.Daily,
+                Interval = 1,
+                AnchorLocalDate = "2026-11-01"
+            },
+            TimeZoneId = TimeZoneInfo.Utc.Id,
+            ConvertSourceToFirstOccurrence = true
+        });
+
+        harness.Clock.UtcNow = DateTimeOffset.Parse("2026-11-10T12:00:00Z");
+        var evaluated = await harness.Recurrence.EvaluateTemplateAsync(template.Id);
+        Assert.Equal(seed.Id, evaluated!.Id);
+
+        var all = await harness.TaskRepo.ListByRecurrenceTemplateAsync(template.Id);
+        Assert.Single(all, t => !t.IsCompleted);
+        Assert.Equal("2026-11-01", all[0].OccurrenceKey);
+
+        var refreshed = await harness.Recurrence.GetTemplateAsync(template.Id);
+        Assert.Equal("2026-11-10", refreshed!.LastSkippedOccurrenceKey);
+    }
+
+    [Fact]
+    public async Task Schedule_edit_and_disable_preserve_existing_occurrences()
+    {
+        var harness = CreateHarness(DateTimeOffset.Parse("2026-11-04T12:00:00Z"));
+        var seed = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Series" });
+        var template = await harness.Recurrence.AttachAsync(new AttachRecurrenceRequest
+        {
+            TaskId = seed.Id,
+            Rule = new RecurrenceRule
+            {
+                Frequency = RecurrenceFrequency.Daily,
+                Interval = 1,
+                AnchorLocalDate = "2026-11-04"
+            },
+            TimeZoneId = TimeZoneInfo.Utc.Id,
+            ConvertSourceToFirstOccurrence = true
+        });
+
+        await harness.Recurrence.EditOccurrenceAsync(new EditOccurrenceRequest
+        {
+            TaskId = seed.Id,
+            Scope = OccurrenceEditScope.ThisAndFuture,
+            FutureRule = new RecurrenceRule
+            {
+                Frequency = RecurrenceFrequency.Weekly,
+                Interval = 2,
+                Weekdays = [(int)DayOfWeek.Wednesday],
+                AnchorLocalDate = "2026-11-04"
+            }
+        });
+
+        var updated = await harness.Recurrence.GetTemplateAsync(template.Id);
+        var rule = harness.Recurrence.ParseRule(updated!);
+        Assert.Equal(RecurrenceFrequency.Weekly, rule!.Frequency);
+        Assert.Equal(2, rule.Interval);
+
+        var occurrence = await harness.TaskRepo.GetByIdAsync(seed.Id);
+        Assert.Equal(template.Id, occurrence!.RecurrenceTemplateId);
+        Assert.Equal("2026-11-04", occurrence.OccurrenceKey);
+        Assert.False(occurrence.IsCompleted);
+
+        await harness.Recurrence.DisableAsync(template.Id);
+        var disabled = await harness.Recurrence.GetTemplateAsync(template.Id);
+        Assert.False(disabled!.IsEnabled);
+
+        harness.Clock.UtcNow = DateTimeOffset.Parse("2026-11-18T12:00:00Z");
+        var afterDisable = await harness.Recurrence.EvaluateTemplateAsync(template.Id);
+        Assert.Null(afterDisable);
+
+        var still = await harness.TaskRepo.ListByRecurrenceTemplateAsync(template.Id);
+        Assert.Single(still);
+        Assert.Equal(seed.Id, still[0].Id);
+    }
+
+    [Fact]
+    public async Task Independent_occurrence_completion_and_duplicate_keys_prevented()
+    {
+        var harness = CreateHarness(DateTimeOffset.Parse("2026-11-04T12:00:00Z"));
+        var seed = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "First Monday" });
+        var template = await harness.Recurrence.AttachAsync(new AttachRecurrenceRequest
+        {
+            TaskId = seed.Id,
+            Rule = new RecurrenceRule
+            {
+                Frequency = RecurrenceFrequency.Monthly,
+                MonthlyMode = MonthlyRecurrenceMode.NthWeekday,
+                WeekOfMonth = 1,
+                WeekdayOfMonth = DayOfWeek.Monday,
+                Interval = 1,
+                AnchorLocalDate = "2026-11-02"
+            },
+            TimeZoneId = TimeZoneInfo.Utc.Id,
+            ConvertSourceToFirstOccurrence = true
+        });
+
+        await harness.Tasks.CompleteAsync(seed.Id, ParentCompletionChoice.CompleteParentOnly);
+        var next = await harness.TaskRepo.FindByOccurrenceKeyAsync(template.Id, "2026-12-07");
+        Assert.NotNull(next);
+        Assert.False(next!.IsCompleted);
+        Assert.True((await harness.TaskRepo.GetByIdAsync(seed.Id))!.IsCompleted);
+
+        // Re-evaluate must not create a second December occurrence.
+        harness.Clock.UtcNow = DateTimeOffset.Parse("2026-12-07T12:00:00Z");
+        var again = await harness.Recurrence.EvaluateTemplateAsync(template.Id);
+        Assert.Equal(next.Id, again!.Id);
+        var all = await harness.TaskRepo.ListByRecurrenceTemplateAsync(template.Id);
+        Assert.Equal(all.Count, all.Select(t => t.OccurrenceKey).Distinct().Count());
+    }
+
     private static Harness CreateHarness(DateTimeOffset utcNow)
     {
         var tasks = new InMemoryTaskRepository();
