@@ -41,11 +41,17 @@ public partial class OverlayWindow : Window
     /// <summary>Invisible edge hit-test thickness (DIP) for layered-window resize.</summary>
     private const double ResizeBorderDip = 6;
 
+    /// <summary>Fallback corner radius (DIP) when TpOverlayWindowRadius is missing.</summary>
+    private const double DefaultCornerRadiusDip = 18;
+
     private readonly OverlayViewModel _viewModel;
     private readonly ILogger<OverlayWindow> _logger;
     private readonly DispatcherTimer _elapsedTimer;
     private CancellationTokenSource? _placementSaveCts;
     private bool _suppressPlacementSave;
+    private bool _nativeRegionUpdateScheduled;
+    private RoundWindowRegionParams? _appliedNativeRegion;
+    private IntPtr _hookedHwnd;
 
     public OverlayWindow(OverlayViewModel viewModel, ILogger<OverlayWindow> logger)
     {
@@ -64,6 +70,8 @@ public partial class OverlayWindow : Window
         };
         _elapsedTimer.Tick += (_, _) => _viewModel.TickActiveElapsed();
         _elapsedTimer.Start();
+
+        DpiChanged += OverlayWindow_OnDpiChanged;
     }
 
     private void OverlayWindow_OnSourceInitialized(object? sender, EventArgs e)
@@ -93,7 +101,15 @@ public partial class OverlayWindow : Window
         // After HWND init + backdrop scrub: hide the native rectangular DWM border outline.
         SuppressNativeDwmBorder();
 
-        source.AddHook(WndProc);
+        // HWND recreate (or first create): drop cached region and re-hook.
+        if (_hookedHwnd != handle)
+        {
+            _hookedHwnd = handle;
+            _appliedNativeRegion = null;
+            source.AddHook(WndProc);
+        }
+
+        ScheduleNativeRoundedRegionUpdate();
     }
 
     private void OverlayWindow_OnLoaded(object sender, RoutedEventArgs e)
@@ -110,6 +126,14 @@ public partial class OverlayWindow : Window
         IsolateFromNativeBackdrop();
         SuppressNativeDwmBorder();
         ApplyRootSurfaceClip();
+        // First show + layout: clip HWND to RootSurface round-rect (excludes white host corners).
+        ScheduleNativeRoundedRegionUpdate();
+    }
+
+    private void OverlayWindow_OnDpiChanged(object sender, System.Windows.DpiChangedEventArgs e)
+    {
+        _appliedNativeRegion = null;
+        ScheduleNativeRoundedRegionUpdate();
     }
 
     /// <summary>
@@ -151,7 +175,38 @@ public partial class OverlayWindow : Window
         ref int pvAttribute,
         int cbAttribute);
 
-    private void RootSurface_OnSizeChanged(object sender, SizeChangedEventArgs e) => ApplyRootSurfaceClip();
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect lpRect);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern IntPtr CreateRoundRectRgn(
+        int nLeftRect,
+        int nTopRect,
+        int nRightRect,
+        int nBottomRect,
+        int nWidthEllipse,
+        int nHeightEllipse);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern bool DeleteObject(IntPtr hObject);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    private void RootSurface_OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        ApplyRootSurfaceClip();
+        ScheduleNativeRoundedRegionUpdate();
+    }
 
     private void ApplyRootSurfaceClip()
     {
@@ -160,14 +215,128 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        var radius = TryFindResource("TpOverlayWindowRadius") is CornerRadius corner
-            ? corner.TopLeft
-            : 18;
+        var radius = ResolveCornerRadiusDip();
 
         RootSurface.Clip = new RectangleGeometry(
             new Rect(0, 0, RootSurface.ActualWidth, RootSurface.ActualHeight),
             radius,
             radius);
+    }
+
+    private double ResolveCornerRadiusDip()
+    {
+        return TryFindResource("TpOverlayWindowRadius") is CornerRadius corner
+            ? corner.TopLeft
+            : DefaultCornerRadiusDip;
+    }
+
+    /// <summary>
+    /// Coalesce region updates onto the dispatcher after layout so SizeChanged / DPI /
+    /// SourceInitialized do not recurse into measure while applying SetWindowRgn.
+    /// </summary>
+    private void ScheduleNativeRoundedRegionUpdate()
+    {
+        if (_nativeRegionUpdateScheduled)
+        {
+            return;
+        }
+
+        _nativeRegionUpdateScheduled = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, ApplyNativeRoundedRegion);
+    }
+
+    /// <summary>
+    /// Native HWND clip matching RootSurface physical bounds (rounded). Excludes the white
+    /// layered host that can sit ~1px outside RootSurface. SetWindowRgn owns the HRGN on success.
+    /// </summary>
+    private void ApplyNativeRoundedRegion()
+    {
+        _nativeRegionUpdateScheduled = false;
+
+        if (!IsVisible
+            || RootSurface.ActualWidth <= 0
+            || RootSurface.ActualHeight <= 0)
+        {
+            return;
+        }
+
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        if (!GetWindowRect(hwnd, out var windowRect))
+        {
+            _logger.LogWarning(
+                "GetWindowRect failed for overlay HWND (Win32 {Error})",
+                Marshal.GetLastWin32Error());
+            return;
+        }
+
+        WpfPoint rootTopLeftDip;
+        WpfPoint rootBottomRightDip;
+        try
+        {
+            rootTopLeftDip = RootSurface.PointToScreen(new WpfPoint(0, 0));
+            rootBottomRightDip = RootSurface.PointToScreen(
+                new WpfPoint(RootSurface.ActualWidth, RootSurface.ActualHeight));
+        }
+        catch (InvalidOperationException)
+        {
+            // Not connected to a presentation source yet.
+            return;
+        }
+
+        var dpi = VisualTreeHelper.GetDpi(RootSurface);
+        var region = RoundWindowRegionGeometry.Compute(
+            windowRect.Left,
+            windowRect.Top,
+            rootTopLeftDip.X,
+            rootTopLeftDip.Y,
+            rootBottomRightDip.X,
+            rootBottomRightDip.Y,
+            dpi.DpiScaleX,
+            dpi.DpiScaleY,
+            ResolveCornerRadiusDip());
+
+        if (!region.IsValid)
+        {
+            return;
+        }
+
+        if (_appliedNativeRegion is { } previous && previous.Equals(region))
+        {
+            return;
+        }
+
+        var hrgn = CreateRoundRectRgn(
+            region.Left,
+            region.Top,
+            region.Right,
+            region.Bottom,
+            region.EllipseWidth,
+            region.EllipseHeight);
+
+        if (hrgn == IntPtr.Zero)
+        {
+            _logger.LogWarning(
+                "CreateRoundRectRgn failed for overlay (Win32 {Error})",
+                Marshal.GetLastWin32Error());
+            return;
+        }
+
+        // SetWindowRgn returns nonzero on success and then owns hrgn (do not DeleteObject).
+        if (SetWindowRgn(hwnd, hrgn, bRedraw: true) == 0)
+        {
+            _logger.LogWarning(
+                "SetWindowRgn failed for overlay (Win32 {Error})",
+                Marshal.GetLastWin32Error());
+            _ = DeleteObject(hrgn);
+            return;
+        }
+
+        _appliedNativeRegion = region;
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -375,6 +544,13 @@ public partial class OverlayWindow : Window
 
     private void OverlayWindow_OnPlacementChanged(object? sender, EventArgs e)
     {
+        // Window resize can change HWND vs RootSurface physical offset (~1px chrome).
+        // LocationChanged alone keeps HWND-relative bounds; SizeChanged refreshes the region.
+        if (e is SizeChangedEventArgs)
+        {
+            ScheduleNativeRoundedRegionUpdate();
+        }
+
         if (_suppressPlacementSave || !IsVisible)
         {
             return;
