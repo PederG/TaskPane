@@ -22,15 +22,6 @@ namespace TaskPane.App.Windows;
 public partial class OverlayWindow : Window
 {
     private const int WmNcHitTest = 0x0084;
-    private const int HtClient = 1;
-    private const int HtLeft = 10;
-    private const int HtRight = 11;
-    private const int HtTop = 12;
-    private const int HtTopLeft = 13;
-    private const int HtTopRight = 14;
-    private const int HtBottom = 15;
-    private const int HtBottomLeft = 16;
-    private const int HtBottomRight = 17;
 
     /// <summary>DWMWINDOWATTRIBUTE — suppress the native DWM window border color (Win11+).</summary>
     private const int DwmwaBorderColor = 34;
@@ -38,14 +29,24 @@ public partial class OverlayWindow : Window
     /// <summary>DWMWA_COLOR_NONE — no visible DWM border color.</summary>
     private const uint DwmwaColorNone = 0xFFFFFFFE;
 
-    /// <summary>Invisible edge hit-test thickness (DIP) for layered-window resize.</summary>
-    private const double ResizeBorderDip = 6;
+    /// <summary>Fallback corner radius (DIP) when TpOverlayWindowRadius is missing.</summary>
+    private const double DefaultCornerRadiusDip = 18;
 
     private readonly OverlayViewModel _viewModel;
     private readonly ILogger<OverlayWindow> _logger;
     private readonly DispatcherTimer _elapsedTimer;
     private CancellationTokenSource? _placementSaveCts;
     private bool _suppressPlacementSave;
+    private bool _nativeRegionUpdateScheduled;
+    private RoundWindowRegionParams? _appliedNativeRegion;
+    private IntPtr _hookedHwnd;
+
+    /// <summary>
+    /// Local diagnostic only: set true before launch to zero RootSurface BorderThickness so
+    /// Windows QA can tell a #FFFFFF left/top hairline (HWND host) from the WPF border stroke.
+    /// Shipping stays false — the 1px left/top region inset addresses the host hairline.
+    /// </summary>
+    private bool _diagnosticZeroRootBorderThickness;
 
     public OverlayWindow(OverlayViewModel viewModel, ILogger<OverlayWindow> logger)
     {
@@ -57,6 +58,8 @@ public partial class OverlayWindow : Window
         // Layered transparent host must stay fully opaque; content translucency is on RootSurface.
         Opacity = 1;
         Background = MediaBrushes.Transparent;
+        // Flip to true locally for Windows QA (WPF border vs HWND #FFFFFF hairline). Do not ship true.
+        _diagnosticZeroRootBorderThickness = false;
 
         _elapsedTimer = new DispatcherTimer
         {
@@ -64,6 +67,8 @@ public partial class OverlayWindow : Window
         };
         _elapsedTimer.Tick += (_, _) => _viewModel.TickActiveElapsed();
         _elapsedTimer.Start();
+
+        DpiChanged += OverlayWindow_OnDpiChanged;
     }
 
     private void OverlayWindow_OnSourceInitialized(object? sender, EventArgs e)
@@ -93,7 +98,15 @@ public partial class OverlayWindow : Window
         // After HWND init + backdrop scrub: hide the native rectangular DWM border outline.
         SuppressNativeDwmBorder();
 
-        source.AddHook(WndProc);
+        // HWND recreate (or first create): drop cached region and re-hook.
+        if (_hookedHwnd != handle)
+        {
+            _hookedHwnd = handle;
+            _appliedNativeRegion = null;
+            source.AddHook(WndProc);
+        }
+
+        ScheduleNativeRoundedRegionUpdate();
     }
 
     private void OverlayWindow_OnLoaded(object sender, RoutedEventArgs e)
@@ -109,7 +122,20 @@ public partial class OverlayWindow : Window
         Background = MediaBrushes.Transparent;
         IsolateFromNativeBackdrop();
         SuppressNativeDwmBorder();
+        if (_diagnosticZeroRootBorderThickness)
+        {
+            RootSurface.BorderThickness = new Thickness(0);
+        }
+
         ApplyRootSurfaceClip();
+        // First show + layout: clip HWND to RootSurface round-rect (excludes white host corners).
+        ScheduleNativeRoundedRegionUpdate();
+    }
+
+    private void OverlayWindow_OnDpiChanged(object sender, System.Windows.DpiChangedEventArgs e)
+    {
+        _appliedNativeRegion = null;
+        ScheduleNativeRoundedRegionUpdate();
     }
 
     /// <summary>
@@ -151,7 +177,38 @@ public partial class OverlayWindow : Window
         ref int pvAttribute,
         int cbAttribute);
 
-    private void RootSurface_OnSizeChanged(object sender, SizeChangedEventArgs e) => ApplyRootSurfaceClip();
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect lpRect);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern IntPtr CreateRoundRectRgn(
+        int nLeftRect,
+        int nTopRect,
+        int nRightRect,
+        int nBottomRect,
+        int nWidthEllipse,
+        int nHeightEllipse);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern bool DeleteObject(IntPtr hObject);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    private void RootSurface_OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        ApplyRootSurfaceClip();
+        ScheduleNativeRoundedRegionUpdate();
+    }
 
     private void ApplyRootSurfaceClip()
     {
@@ -160,14 +217,139 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        var radius = TryFindResource("TpOverlayWindowRadius") is CornerRadius corner
-            ? corner.TopLeft
-            : 18;
+        var radius = ResolveCornerRadiusDip();
 
         RootSurface.Clip = new RectangleGeometry(
             new Rect(0, 0, RootSurface.ActualWidth, RootSurface.ActualHeight),
             radius,
             radius);
+    }
+
+    private double ResolveCornerRadiusDip()
+    {
+        return TryFindResource("TpOverlayWindowRadius") is CornerRadius corner
+            ? corner.TopLeft
+            : DefaultCornerRadiusDip;
+    }
+
+    /// <summary>
+    /// Coalesce region updates onto the dispatcher after layout so SizeChanged / DPI /
+    /// SourceInitialized do not recurse into measure while applying SetWindowRgn.
+    /// </summary>
+    private void ScheduleNativeRoundedRegionUpdate()
+    {
+        if (_nativeRegionUpdateScheduled)
+        {
+            return;
+        }
+
+        _nativeRegionUpdateScheduled = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, ApplyNativeRoundedRegion);
+    }
+
+    /// <summary>
+    /// Native HWND clip matching RootSurface physical bounds (rounded). Excludes the white
+    /// layered host outside RootSurface (incl. 1px left/top inset for the host hairline).
+    /// SetWindowRgn owns the HRGN on success.
+    /// <para>
+    /// Corner AA tradeoff: <c>CreateRoundRectRgn</c> is binary — it cannot antialias, and a
+    /// tight region clips WPF's sub-pixel CornerRadius fringe against the desktop. Expanding
+    /// the region outward would expose the white HWND host in the corner wedges (the defect
+    /// SetWindowRgn exists to hide). No shipping expand/offset/radius trial constants.
+    /// Prefer layered per-pixel alpha for a smooth outer silhouette; keep this region as the
+    /// white-host fallback until Windows QA verifies an alpha path. No fake outlines/halos.
+    /// </para>
+    /// </summary>
+    private void ApplyNativeRoundedRegion()
+    {
+        _nativeRegionUpdateScheduled = false;
+
+        if (!IsVisible
+            || RootSurface.ActualWidth <= 0
+            || RootSurface.ActualHeight <= 0)
+        {
+            return;
+        }
+
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        if (!GetWindowRect(hwnd, out var windowRect))
+        {
+            _logger.LogWarning(
+                "GetWindowRect failed for overlay HWND (Win32 {Error})",
+                Marshal.GetLastWin32Error());
+            return;
+        }
+
+        // PointToScreen returns screen coords already consistent with GetWindowRect — do not
+        // multiply by DpiScale again (only the DIP radius is scaled in Compute).
+        WpfPoint rootTopLeftScreen;
+        WpfPoint rootBottomRightScreen;
+        try
+        {
+            rootTopLeftScreen = RootSurface.PointToScreen(new WpfPoint(0, 0));
+            rootBottomRightScreen = RootSurface.PointToScreen(
+                new WpfPoint(RootSurface.ActualWidth, RootSurface.ActualHeight));
+        }
+        catch (InvalidOperationException)
+        {
+            // Not connected to a presentation source yet.
+            return;
+        }
+
+        var dpi = VisualTreeHelper.GetDpi(RootSurface);
+        var region = RoundWindowRegionGeometry.Compute(
+            windowRect.Left,
+            windowRect.Top,
+            rootTopLeftScreen.X,
+            rootTopLeftScreen.Y,
+            rootBottomRightScreen.X,
+            rootBottomRightScreen.Y,
+            dpi.DpiScaleX,
+            dpi.DpiScaleY,
+            ResolveCornerRadiusDip());
+
+        if (!region.IsValid)
+        {
+            return;
+        }
+
+        if (_appliedNativeRegion is { } previous && previous.Equals(region))
+        {
+            return;
+        }
+
+        var hrgn = CreateRoundRectRgn(
+            region.Left,
+            region.Top,
+            region.Right,
+            region.Bottom,
+            region.EllipseWidth,
+            region.EllipseHeight);
+
+        if (hrgn == IntPtr.Zero)
+        {
+            _logger.LogWarning(
+                "CreateRoundRectRgn failed for overlay (Win32 {Error})",
+                Marshal.GetLastWin32Error());
+            return;
+        }
+
+        // SetWindowRgn returns nonzero on success and then owns hrgn (do not DeleteObject).
+        if (SetWindowRgn(hwnd, hrgn, bRedraw: true) == 0)
+        {
+            _logger.LogWarning(
+                "SetWindowRgn failed for overlay (Win32 {Error})",
+                Marshal.GetLastWin32Error());
+            _ = DeleteObject(hrgn);
+            return;
+        }
+
+        _appliedNativeRegion = region;
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -197,27 +379,111 @@ public partial class OverlayWindow : Window
             return IntPtr.Zero;
         }
 
-        var border = ResizeBorderDip;
-        var onLeft = local.X <= border;
-        var onRight = local.X >= width - border;
-        var onTop = local.Y <= border;
-        var onBottom = local.Y >= height - border;
-
-        var hit = (onLeft, onRight, onTop, onBottom) switch
-        {
-            (true, _, true, _) => HtTopLeft,
-            (_, true, true, _) => HtTopRight,
-            (true, _, _, true) => HtBottomLeft,
-            (_, true, _, true) => HtBottomRight,
-            (true, _, _, _) => HtLeft,
-            (_, true, _, _) => HtRight,
-            (_, _, true, _) => HtTop,
-            (_, _, _, true) => HtBottom,
-            _ => HtClient
-        };
+        ResolveVisibleRootSurfaceBounds(out var visL, out var visT, out var visR, out var visB);
+        var hit = OverlayNcHitTest.Decide(
+            local.X,
+            local.Y,
+            width,
+            height,
+            OverlayNcHitTest.DefaultResizeBorderDip,
+            ResolveTopCaptionBandDip(),
+            positionLocked: _viewModel.Placement.PositionLocked,
+            overInteractiveChrome: IsOverHeaderActionChrome(local),
+            visibleLeft: visL,
+            visibleTop: visT,
+            visibleRight: visR,
+            visibleBottom: visB);
 
         handled = true;
         return new IntPtr(hit);
+    }
+
+    private double ResolveTopCaptionBandDip()
+    {
+        if (TryFindResource("TpOverlayPad") is double pad)
+        {
+            return pad;
+        }
+
+        if (TryFindResource("TpOverlayPadThickness") is Thickness thickness)
+        {
+            return thickness.Top;
+        }
+
+        return OverlayNcHitTest.DefaultTopCaptionBandDip;
+    }
+
+    private void ResolveVisibleRootSurfaceBounds(
+        out double left,
+        out double top,
+        out double right,
+        out double bottom)
+    {
+        left = 0;
+        top = 0;
+        right = ActualWidth;
+        bottom = ActualHeight;
+
+        if (RootSurface.ActualWidth <= 0 || RootSurface.ActualHeight <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var topLeft = RootSurface.TransformToAncestor(this).Transform(new WpfPoint(0, 0));
+            left = topLeft.X;
+            top = topLeft.Y;
+            right = topLeft.X + RootSurface.ActualWidth;
+            bottom = topLeft.Y + RootSurface.ActualHeight;
+        }
+        catch (InvalidOperationException)
+        {
+            // Presentation source not ready — fall back to full window.
+        }
+    }
+
+    /// <summary>
+    /// True when the point is over Search / Expand / More inside <see cref="DragHeader"/>.
+    /// Those must stay HTCLIENT so HTCAPTION never steals their clicks.
+    /// </summary>
+    private bool IsOverHeaderActionChrome(WpfPoint local)
+    {
+        HitTestResult? result;
+        try
+        {
+            result = VisualTreeHelper.HitTest(this, local);
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+
+        if (result?.VisualHit is not DependencyObject hit)
+        {
+            return false;
+        }
+
+        System.Windows.Controls.Button? button = null;
+        for (var current = hit; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (current is System.Windows.Controls.Button found)
+            {
+                button = found;
+            }
+
+            if (ReferenceEquals(current, DragHeader))
+            {
+                return button is not null;
+            }
+
+            if (ReferenceEquals(current, this))
+            {
+                break;
+            }
+        }
+
+        return false;
     }
 
     public async Task InitializeAsync()
@@ -261,7 +527,15 @@ public partial class OverlayWindow : Window
 
     private void DragHeader_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        // WPF path for the header row; empty top padding uses native HTCAPTION via WM_NCHITTEST.
+        // Both paths honor position-locked.
         if (_viewModel.Placement.PositionLocked)
+        {
+            return;
+        }
+
+        if (e.OriginalSource is DependencyObject source
+            && IsHeaderActionButton(source))
         {
             return;
         }
@@ -270,6 +544,24 @@ public partial class OverlayWindow : Window
         {
             DragMove();
         }
+    }
+
+    private static bool IsHeaderActionButton(DependencyObject source)
+    {
+        for (var current = source; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (current is System.Windows.Controls.Button)
+            {
+                return true;
+            }
+
+            if (current is OverlayWindow)
+            {
+                break;
+            }
+        }
+
+        return false;
     }
 
     private void QuickAddBox_OnKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -375,6 +667,13 @@ public partial class OverlayWindow : Window
 
     private void OverlayWindow_OnPlacementChanged(object? sender, EventArgs e)
     {
+        // Window resize can change HWND vs RootSurface physical offset (~1px chrome).
+        // LocationChanged alone keeps HWND-relative bounds; SizeChanged refreshes the region.
+        if (e is SizeChangedEventArgs)
+        {
+            ScheduleNativeRoundedRegionUpdate();
+        }
+
         if (_suppressPlacementSave || !IsVisible)
         {
             return;
