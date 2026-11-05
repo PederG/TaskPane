@@ -20,23 +20,22 @@ dotnet test TaskPane.sln -c Release
 
 ## Manual Windows 11 checklist (Phase 7)
 
-Mark each **Pass** only after executing on a real Windows 11 machine. Otherwise leave **Not tested**.
+Mark each **Pass** only after executing on a real Windows 11 machine. Otherwise leave **Not tested**. Prefer a throwaway Windows profile or a renamed `%LOCALAPPDATA%\TaskPane` folder before restore/import drills — the live DB is only `%LOCALAPPDATA%\TaskPane\tasks.db`.
 
 | Check | Result |
 |---|---|
-| Overlay drag across monitors; restart restores placement | Not tested |
-| Unplug/disable monitor that held the overlay; window returns to a visible work area | Not tested |
-| DPI 100% / 125% / 150% and mixed-DPI if available | Not tested |
+| Rounded overlay corners over contrasting wallpaper (no white triangles / DWM halo) | Not tested |
+| Overlay drag/resize (edges + corners); DPI 100/125/150; multi-monitor restore + missing-monitor clamp | Not tested |
+| Tasks/subtasks/sleep/notes/undo/recurrence/reminders end-to-end (overlay + manager) | Not tested |
+| Time tracking: sleep stops descendant timers; lock pause/resume; idle discard vs keep&resume; crash recovery | Not tested |
+| Persistence across tray quit/relaunch (tasks, sessions, placement) | Not tested |
+| Backup now + restore + JSON/Markdown export/import (incl. ImportAsNew remap; open sessions → Recovered) | Not tested |
+| Overlay ↔ manager parity; tray; theme; text scale; autostart HKCU | Not tested |
 | Keyboard-only create/edit/navigate; focus rectangle visible | Not tested |
-| Text scale 125% and 150% via Manager → App settings | Not tested |
-| Theme system/light/dark applies without restart | Not tested |
-| Autostart opt-in appears in HKCU Run; disable removes it | Not tested |
-| Kill process mid-session; next launch shows recovery notice; no phantom timer hours | Not tested |
 | Offline / Documents unavailable; app starts and edits tasks | Not tested |
-| Tray menu: overlay, manager/settings, quick capture, quit | Not tested |
 | Publish folder runs without admin from a user-writable path | Not tested |
-| Backup now + restore + JSON export/import still works after polish | Not tested |
 | Large list (~3k tasks) remains scrollable with virtualization | Not tested |
+| Public default wordmark remains TaskPane (`AppDisplayName` override only if intentional) | Not tested |
 
 ## User manual (short)
 

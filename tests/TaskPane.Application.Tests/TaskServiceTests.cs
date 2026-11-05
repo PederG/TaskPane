@@ -94,6 +94,30 @@ public sealed class TaskServiceTests
     }
 
     [Fact]
+    public async Task Restore_child_whose_parent_row_is_missing_promotes_to_root()
+    {
+        var sut = CreateSut(out var repo);
+        var parent = await sut.CreateAsync(new CreateTaskRequest { Title = "Parent" });
+        var child = await sut.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Orphan candidate",
+            ParentTaskId = parent.Id
+        });
+
+        await sut.SoftDeleteAsync(child.Id);
+        var batch = repo.Items.Single(t => t.Id.Equals(child.Id)).DeletionBatchId!;
+        Assert.NotNull(batch);
+
+        // Simulate a missing parent row (not merely soft-deleted) before restore.
+        repo.Items.RemoveAll(t => t.Id.Equals(parent.Id));
+
+        await sut.RestoreBatchAsync(batch.Value);
+        var restored = repo.Items.Single(t => t.Id.Equals(child.Id));
+        Assert.False(restored.IsDeleted);
+        Assert.Null(restored.ParentTaskId);
+    }
+
+    [Fact]
     public async Task Complete_parent_with_open_children_requires_choice()
     {
         var sut = CreateSut(out _);

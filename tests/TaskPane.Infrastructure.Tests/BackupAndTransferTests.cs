@@ -325,6 +325,191 @@ public sealed class BackupAndTransferTests
         }
     }
 
+    [Fact]
+    public async Task Import_open_session_closes_at_start_as_Recovered_with_no_phantom_time()
+    {
+        var root = TempRoot();
+        var dbPath = Path.Combine(root, "tasks.db");
+        var docs = Path.Combine(root, "Documents");
+        Directory.CreateDirectory(docs);
+
+        try
+        {
+            await using var services = Build(dbPath, AvailableDocs(docs));
+            await services.GetRequiredService<SqliteMigrator>().MigrateAsync();
+            var transfer = services.GetRequiredService<TransferService>();
+            var taskId = Guid.NewGuid().ToString("D");
+            var sessionId = Guid.NewGuid().ToString("D");
+            var started = DateTimeOffset.Parse("2026-11-04T08:00:00Z");
+
+            var doc = new ExportDocument
+            {
+                SchemaVersion = 1,
+                Application = "TaskPane",
+                ExportedAtUtc = DateTimeOffset.UtcNow,
+                Tasks =
+                [
+                    new ExportTaskDto
+                    {
+                        Id = taskId,
+                        Title = "Imported open",
+                        Priority = 1,
+                        FocusBucket = 0,
+                        Status = 0,
+                        ManualSortKey = 1,
+                        CreatedUtc = started,
+                        UpdatedUtc = started,
+                        Revision = 1
+                    }
+                ],
+                TimeSessions =
+                [
+                    new ExportTimeSessionDto
+                    {
+                        Id = sessionId,
+                        TaskId = taskId,
+                        StartedUtc = started,
+                        EndedUtc = null,
+                        EndReason = null,
+                        IsDiscarded = false,
+                        CreatedUtc = started,
+                        UpdatedUtc = started
+                    }
+                ]
+            };
+            var json = System.Text.Json.JsonSerializer.Serialize(doc, CamelCaseJson);
+
+            var result = await transfer.ImportJsonAsync(json, ImportMode.MergeByIdSkipConflicts, dryRun: false);
+            Assert.Equal(1, result.ImportedSessions);
+            Assert.Contains(result.Notes, n => n.Contains("open time session", StringComparison.OrdinalIgnoreCase));
+
+            var sessions = await services.GetRequiredService<ITimeSessionRepository>()
+                .ListAllAsync(includeDiscarded: true);
+            var session = Assert.Single(sessions);
+            Assert.False(session.IsOpen);
+            Assert.Equal(started, session.EndedUtc);
+            Assert.Equal(SessionEndReason.Recovered, session.EndReason);
+            Assert.Equal(TimeSpan.Zero, session.Duration);
+            Assert.Null(await services.GetRequiredService<ITimeSessionRepository>().GetOpenSessionAsync());
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public async Task ImportAsNew_remaps_parent_child_and_dependency_ids()
+    {
+        var root = TempRoot();
+        var dbPath = Path.Combine(root, "tasks.db");
+        var docs = Path.Combine(root, "Documents");
+        Directory.CreateDirectory(docs);
+
+        try
+        {
+            await using var services = Build(dbPath, AvailableDocs(docs));
+            await services.GetRequiredService<SqliteMigrator>().MigrateAsync();
+            var transfer = services.GetRequiredService<TransferService>();
+
+            var parentId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+            var childId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+            var blockerId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+            var edgeId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+            var now = DateTimeOffset.Parse("2026-11-04T10:00:00Z");
+
+            var doc = new ExportDocument
+            {
+                SchemaVersion = 1,
+                Application = "TaskPane",
+                ExportedAtUtc = now,
+                Tasks =
+                [
+                    new ExportTaskDto
+                    {
+                        Id = parentId.ToString("D"),
+                        Title = "Remap parent",
+                        Priority = 1,
+                        FocusBucket = 0,
+                        Status = 0,
+                        ManualSortKey = 1,
+                        CreatedUtc = now,
+                        UpdatedUtc = now,
+                        Revision = 1
+                    },
+                    new ExportTaskDto
+                    {
+                        Id = childId.ToString("D"),
+                        ParentTaskId = parentId.ToString("D"),
+                        Title = "Remap child",
+                        Priority = 1,
+                        FocusBucket = 0,
+                        Status = 0,
+                        ManualSortKey = 2,
+                        CreatedUtc = now,
+                        UpdatedUtc = now,
+                        Revision = 1
+                    },
+                    new ExportTaskDto
+                    {
+                        Id = blockerId.ToString("D"),
+                        Title = "Remap blocker",
+                        Priority = 1,
+                        FocusBucket = 0,
+                        Status = 0,
+                        ManualSortKey = 3,
+                        CreatedUtc = now,
+                        UpdatedUtc = now,
+                        Revision = 1
+                    }
+                ],
+                Dependencies =
+                [
+                    new ExportDependencyDto
+                    {
+                        Id = edgeId.ToString("D"),
+                        PredecessorTaskId = blockerId.ToString("D"),
+                        SuccessorTaskId = parentId.ToString("D"),
+                        Kind = 0,
+                        CreatedUtc = now
+                    }
+                ]
+            };
+            var json = System.Text.Json.JsonSerializer.Serialize(doc, CamelCaseJson);
+
+            var result = await transfer.ImportJsonAsync(json, ImportMode.ImportAsNew, dryRun: false);
+            Assert.Equal(3, result.ImportedTasks);
+            Assert.Equal(1, result.ImportedDependencies);
+
+            var imported = await services.GetRequiredService<ITaskRepository>()
+                .ListAsync(includeDeleted: true);
+            Assert.DoesNotContain(imported, t => t.Id.ToString().Equals(parentId.ToString("D"), StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(imported, t => t.Id.ToString().Equals(childId.ToString("D"), StringComparison.OrdinalIgnoreCase));
+
+            var parent = Assert.Single(imported, t => t.Title == "Remap parent");
+            var child = Assert.Single(imported, t => t.Title == "Remap child");
+            var blocker = Assert.Single(imported, t => t.Title == "Remap blocker");
+            Assert.Equal(parent.Id, child.ParentTaskId);
+            Assert.Null(parent.ParentTaskId);
+
+            var edges = await services.GetRequiredService<IDependencyRepository>()
+                .ListAsync(includeDeleted: false);
+            var edge = Assert.Single(edges);
+            Assert.NotEqual(edgeId.ToString("D"), edge.Id.ToString(), StringComparer.OrdinalIgnoreCase);
+            Assert.Equal(blocker.Id, edge.PredecessorTaskId);
+            Assert.Equal(parent.Id, edge.SuccessorTaskId);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static readonly System.Text.Json.JsonSerializerOptions CamelCaseJson = new()
+    {
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+    };
+
     private static DocumentsFolderResolver AvailableDocs(string docs)
         => new(() => docs, Directory.Exists, path => Directory.CreateDirectory(path));
 
