@@ -197,6 +197,109 @@ public sealed class RecurrenceAndReminderTests
     }
 
     [Fact]
+    public async Task Reminder_schedule_is_independent_of_deadline_and_omits_notes()
+    {
+        var harness = CreateHarness(DateTimeOffset.Parse("2026-11-05T10:00:00Z"));
+        var task = await harness.Tasks.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Ship docs",
+            Notes = "PRIVATE note body must never appear in notifications",
+            DeadlineLocalDate = "2026-12-01"
+        });
+
+        var reminder = await harness.Reminders.ScheduleAsync(task.Id, DateTimeOffset.Parse("2026-11-05T09:30:00Z"));
+        var refreshed = await harness.TaskRepo.GetByIdAsync(task.Id);
+        Assert.Equal("2026-12-01", refreshed!.DeadlineLocalDate);
+        Assert.Equal(reminder.TaskId, task.Id);
+
+        var status = await harness.Reminders.ProcessDueAsync();
+        Assert.Contains(NotificationDeliveryStatus.FallbackInApp, status);
+        Assert.Single(harness.Notifier.Delivered);
+        Assert.Equal("Ship docs", harness.Notifier.Delivered[0].Title);
+        Assert.Equal("TaskPane", harness.Notifier.Delivered[0].AppDisplayName);
+        Assert.DoesNotContain("PRIVATE", harness.Notifier.Delivered[0].Title, StringComparison.Ordinal);
+        Assert.DoesNotContain("note body", harness.Notifier.Delivered[0].AppDisplayName, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Reminder_dismiss_prevents_redelivery()
+    {
+        var harness = CreateHarness(DateTimeOffset.Parse("2026-11-05T10:00:00Z"));
+        var task = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Dismiss me" });
+        var reminder = await harness.Reminders.ScheduleAsync(task.Id, DateTimeOffset.Parse("2026-11-05T09:00:00Z"));
+        await harness.Reminders.ProcessDueAsync();
+        await harness.Reminders.DismissAsync(reminder.Id);
+
+        harness.Clock.UtcNow = DateTimeOffset.Parse("2026-11-05T11:00:00Z");
+        var again = await harness.Reminders.ProcessDueAsync();
+        Assert.Empty(again);
+        Assert.Single(harness.Notifier.Delivered);
+        var stored = await harness.ReminderRepo.GetByIdAsync(reminder.Id);
+        Assert.NotNull(stored!.DismissedUtc);
+    }
+
+    [Fact]
+    public async Task Reminder_restart_process_due_does_not_duplicate_delivery()
+    {
+        var harness = CreateHarness(DateTimeOffset.Parse("2026-11-05T10:00:00Z"));
+        var task = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Once only" });
+        await harness.Reminders.ScheduleAsync(task.Id, DateTimeOffset.Parse("2026-11-05T09:00:00Z"));
+        await harness.Reminders.ProcessDueAsync();
+        Assert.Single(harness.Notifier.Delivered);
+
+        // Simulate process restart: new service over the same persisted reminder rows.
+        var restarted = new ReminderService(
+            harness.ReminderRepo,
+            harness.TaskRepo,
+            harness.Settings,
+            harness.Notifier,
+            new PassthroughUnitOfWork(),
+            harness.Clock,
+            NullLogger<ReminderService>.Instance);
+
+        var second = await restarted.ProcessDueAsync();
+        Assert.Empty(second);
+        Assert.Single(harness.Notifier.Delivered);
+    }
+
+    [Fact]
+    public async Task Reminder_configurable_snooze_uses_saved_default_minutes()
+    {
+        var harness = CreateHarness(DateTimeOffset.Parse("2026-11-05T10:00:00Z"));
+        await harness.Reminders.SaveSettingsAsync(new Core.Entities.ReminderSettings
+        {
+            QuietHoursEnabled = false,
+            QuietStartLocal = "22:00",
+            QuietEndLocal = "07:00",
+            DefaultSnoozeMinutes = 45
+        });
+
+        var task = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Snooze default" });
+        var reminder = await harness.Reminders.ScheduleAsync(task.Id, DateTimeOffset.Parse("2026-11-05T09:00:00Z"));
+        await harness.Reminders.ProcessDueAsync();
+        await harness.Reminders.SnoozeAsync(reminder.Id);
+
+        var after = await harness.ReminderRepo.GetByIdAsync(reminder.Id);
+        Assert.Equal(harness.Clock.UtcNow.AddMinutes(45), after!.DueUtc);
+        Assert.Equal(45, harness.Notifier.Delivered[0].SnoozeMinutes);
+    }
+
+    [Fact]
+    public async Task Reminder_app_display_name_comes_from_settings_not_hardcoded_workplace()
+    {
+        var harness = CreateHarness(DateTimeOffset.Parse("2026-11-05T10:00:00Z"));
+        await harness.Settings.SetRawAsync(
+            Core.Entities.AppSettings.SettingsKey,
+            """{"appDisplayName":"WorkplaceName","autostartEnabled":false,"theme":0,"uiTextScalePercent":100,"enableFileLogging":true,"showCrashRecoveryNotice":true}""");
+
+        var task = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Branded" });
+        await harness.Reminders.ScheduleAsync(task.Id, DateTimeOffset.Parse("2026-11-05T09:00:00Z"));
+        await harness.Reminders.ProcessDueAsync();
+
+        Assert.Equal("WorkplaceName", harness.Notifier.Delivered[0].AppDisplayName);
+    }
+
+    [Fact]
     public async Task Leap_year_month_end_generation_stable()
     {
         var harness = CreateHarness(DateTimeOffset.Parse("2024-01-31T12:00:00Z"));
@@ -370,7 +473,7 @@ public sealed class RecurrenceAndReminderTests
             reminders, tasks, settings, notifier, uow, clock, NullLogger<ReminderService>.Instance);
         var taskService = new TaskService(
             tasks, tags, projects, uow, focus, time, history, recurrence, NullLogger<TaskService>.Instance);
-        return new Harness(taskService, recurrence, reminderService, tasks, reminders, notifier, clock);
+        return new Harness(taskService, recurrence, reminderService, tasks, reminders, settings, notifier, clock);
     }
 
     private sealed record Harness(
@@ -379,11 +482,14 @@ public sealed class RecurrenceAndReminderTests
         ReminderService Reminders,
         InMemoryTaskRepository TaskRepo,
         InMemoryReminderRepository ReminderRepo,
+        InMemorySettingsRepository Settings,
         CapturingNotificationPresenter Notifier,
         FixedClock Clock);
 
     private sealed class CapturingNotificationPresenter : INotificationPresenter
     {
+        public event EventHandler<Core.Reminders.ReminderActivationEventArgs>? Activated;
+
         public List<ReminderNotification> Delivered { get; } = [];
 
         public Task<NotificationDeliveryStatus> ShowAsync(
@@ -393,6 +499,9 @@ public sealed class RecurrenceAndReminderTests
             Delivered.Add(notification);
             return Task.FromResult(NotificationDeliveryStatus.FallbackInApp);
         }
+
+        public void RaiseActivated(Core.Reminders.ReminderActivationEventArgs args)
+            => Activated?.Invoke(this, args);
     }
 
     private sealed class FixedClock(DateTimeOffset utcNow) : IClock

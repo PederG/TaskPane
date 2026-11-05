@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using TaskPane.Core.Branding;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 using TaskPane.Core.Errors;
@@ -211,13 +212,17 @@ public sealed class ReminderService
                 continue;
             }
 
+            var displayName = await GetAppDisplayNameAsync(cancellationToken).ConfigureAwait(false);
+            var snoozeMinutes = settings.DefaultSnoozeMinutes > 0 ? settings.DefaultSnoozeMinutes : 15;
             var status = await _notifications.ShowAsync(new ReminderNotification
             {
                 ReminderId = reminder.Id,
                 TaskId = task.Id,
                 Title = task.Title, // notes intentionally omitted
+                AppDisplayName = displayName,
                 DeliveryKey = reminder.DeliveryKey,
-                DueUtc = reminder.DueUtc
+                DueUtc = reminder.DueUtc,
+                SnoozeMinutes = snoozeMinutes
             }, cancellationToken).ConfigureAwait(false);
 
             if (status is NotificationDeliveryStatus.Delivered or NotificationDeliveryStatus.FallbackInApp)
@@ -231,6 +236,28 @@ public sealed class ReminderService
         }
 
         return results;
+    }
+
+    private async Task<string> GetAppDisplayNameAsync(CancellationToken cancellationToken)
+    {
+        var raw = await _settings.GetRawAsync(AppSettings.SettingsKey, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return AppBranding.DefaultAppDisplayName;
+        }
+
+        try
+        {
+            var settings = JsonSerializer.Deserialize<AppSettings>(raw, JsonOptions);
+            var name = settings?.AppDisplayName?.Trim();
+            return string.IsNullOrWhiteSpace(name)
+                ? AppBranding.DefaultAppDisplayName
+                : name;
+        }
+        catch (JsonException)
+        {
+            return AppBranding.DefaultAppDisplayName;
+        }
     }
 
     private async Task<Reminder> RequireAsync(ReminderId id, CancellationToken cancellationToken)

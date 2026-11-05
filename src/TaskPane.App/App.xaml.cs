@@ -197,6 +197,10 @@ public partial class App : System.Windows.Application
             _ = overlayVm.RefreshCommand.ExecuteAsync(null);
             _ = manager.InitializeAsync();
         });
+        _reminderController.OpenTaskRequested += taskId => TrayIconService.InvokeOnUi(() =>
+        {
+            _ = OpenReminderTaskAsync(manager, managerVm, taskId);
+        });
         await _reminderController.StartAsync().ConfigureAwait(true);
 
         _backupController = _host.Services.GetRequiredService<BackupController>();
@@ -246,6 +250,16 @@ public partial class App : System.Windows.Application
     private void ShowQuickCapture()
     {
         _quickCapture?.ShowCapture();
+    }
+
+    private async Task OpenReminderTaskAsync(
+        ManagerWindow manager,
+        ManagerViewModel managerVm,
+        Core.Ids.TaskId taskId)
+    {
+        await manager.InitializeAsync().ConfigureAwait(true);
+        _modeController?.ShowManager();
+        await managerVm.OpenTaskFromReminderAsync(taskId).ConfigureAwait(true);
     }
 
     private void QuitApplication()
