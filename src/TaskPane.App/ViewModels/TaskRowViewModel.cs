@@ -94,6 +94,12 @@ public partial class TaskRowViewModel : ObservableObject
     [ObservableProperty]
     private string _timerButtonLabel = "▶";
 
+    [ObservableProperty]
+    private bool _isEditing;
+
+    [ObservableProperty]
+    private string _draftTitle = string.Empty;
+
     public double ManualSortKey { get; private set; }
 
     public Guid? DeletionBatchId { get; private set; }
@@ -175,6 +181,26 @@ public partial class TaskRowViewModel : ObservableObject
         TimeText = timeText ?? string.Empty;
         TimerButtonLabel = isRunning ? "■" : "▶";
         MetaText = BuildMeta();
+    }
+
+    /// <summary>Start overlay inline rename (select-all on focus happens in the window).</summary>
+    public void BeginInlineEdit()
+    {
+        DraftTitle = Title;
+        IsEditing = true;
+    }
+
+    public void CancelInlineEdit()
+    {
+        DraftTitle = Title;
+        IsEditing = false;
+    }
+
+    public void ApplyCommittedTitle(string title)
+    {
+        Title = title;
+        DraftTitle = title;
+        IsEditing = false;
     }
 
     private string BuildMeta()

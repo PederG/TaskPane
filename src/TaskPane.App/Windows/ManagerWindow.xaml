@@ -261,12 +261,21 @@
                 <ListBox.ItemTemplate>
                   <DataTemplate>
                     <StackPanel>
+                      <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                          <Setter Property="Margin" Value="0" />
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSubtask}" Value="True">
+                              <Setter Property="Margin" Value="16,0,0,0" />
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </StackPanel.Style>
                       <TextBlock Text="{Binding Title}" FontWeight="SemiBold">
                         <TextBlock.Style>
                           <Style TargetType="TextBlock">
                             <Style.Triggers>
                               <DataTrigger Binding="{Binding IsSubtask}" Value="True">
-                                <Setter Property="Margin" Value="18,0,0,0" />
                                 <Setter Property="FontWeight" Value="Normal" />
                               </DataTrigger>
                               <DataTrigger Binding="{Binding IsOverdue}" Value="True">
@@ -398,7 +407,10 @@
                 </WrapPanel>
                 <StackPanel>
                   <TextBlock Style="{StaticResource TpFieldLabel}" Text="Title" />
-                  <ui:TextBox Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12" />
+                  <ui:TextBox x:Name="TitleEditBox"
+                              Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}"
+                              Margin="0,0,0,12"
+                              AutomationProperties.Name="Task title editor" />
                   <TextBlock Style="{StaticResource TpFieldLabel}" Text="Notes (Markdown / plain text)" />
                   <ui:TextBox Text="{Binding EditNotes, UpdateSourceTrigger=PropertyChanged}"
                               AcceptsReturn="True"

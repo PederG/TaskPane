@@ -9,6 +9,7 @@ using TaskPane.Core.Enums;
 using TaskPane.Core.Ids;
 using TaskPane.Core.Recurrence;
 using TaskPane.Core.Time;
+using TaskPane.Core.Validation;
 using Wpf.Ui.Controls;
 using ReminderSettings = TaskPane.Core.Entities.ReminderSettings;
 using AuditAction = TaskPane.Core.Enums.AuditAction;
@@ -284,6 +285,9 @@ public partial class ManagerViewModel : ObservableObject
     public event Action? ReturnToOverlayRequested;
     public event Action? IdleThresholdChanged;
     public event Action<AppSettings>? AppSettingsChanged;
+
+    /// <summary>Raised after creating a subtask so the manager can focus the title field.</summary>
+    public event Action? FocusTitleRequested;
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -715,6 +719,7 @@ public partial class ManagerViewModel : ObservableObject
         BlockedSummary = string.Empty;
         SelectedSession = null;
         SelectedPredecessor = null;
+        AddSubtaskToSelectedCommand.NotifyCanExecuteChanged();
         if (value is null)
         {
             EditTitle = string.Empty;
@@ -990,21 +995,26 @@ public partial class ManagerViewModel : ObservableObject
         await RefreshAsync().ConfigureAwait(true);
     }
 
-    [RelayCommand]
+    private bool CanAddSubtaskToSelected()
+        => SelectedTask is not null && SubtaskUiPolicy.CanOfferAddSubtask(SelectedTask.IsSubtask);
+
+    [RelayCommand(CanExecute = nameof(CanAddSubtaskToSelected))]
     private async Task AddSubtaskToSelectedAsync()
     {
-        if (SelectedTask is null || SelectedTask.IsSubtask)
+        if (!CanAddSubtaskToSelected())
         {
             return;
         }
 
-        await _taskService.CreateAsync(new CreateTaskRequest
+        var created = await _taskService.CreateAsync(new CreateTaskRequest
         {
-            Title = "New subtask",
-            ParentTaskId = SelectedTask.Id
+            Title = SubtaskUiPolicy.NewSubtaskPlaceholderTitle,
+            ParentTaskId = SelectedTask!.Id
         }).ConfigureAwait(true);
 
         await RefreshAsync().ConfigureAwait(true);
+        SelectedTask = Tasks.FirstOrDefault(t => t.Id.Equals(created.Id));
+        FocusTitleRequested?.Invoke();
     }
 
     [RelayCommand]
