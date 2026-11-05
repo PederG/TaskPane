@@ -8,6 +8,11 @@ All notable TaskPane releases are recorded here.
 - Click opens the related task; configurable snooze minutes; quiet hours preserved; delivery-key dedup across restarts.
 - Notification text uses `AppDisplayName` + task title only (never notes). DigiFokus via AppDisplayName only.
 
+## 0.7.1 — Phase 7 testing and stabilization
+
+- Regression coverage for soft-delete ending descendant timers, idle keep&resume, orphan restore promotion, recurrence not copying dependencies, and import open-session / ImportAsNew ID remap.
+- Expanded Windows 11 manual verification guidance in `SUPPORT.md` (data-safety for restore/import drills).
+
 ## 0.7.0 — Phase 7 production polish
 
 - Accessibility: visible focus style, automation names, tab cycling, text scale setting (100–150%).

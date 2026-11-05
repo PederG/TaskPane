@@ -246,6 +246,53 @@ public sealed class TimeTrackingServiceTests
     }
 
     [Fact]
+    public async Task Idle_keep_and_resume_closes_at_idle_onset_and_starts_fresh_session()
+    {
+        var harness = CreateHarness();
+        var task = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Idle resume" });
+        var start = harness.Clock.UtcNow;
+        await harness.Time.StartOrSwitchAsync(task.Id);
+        harness.Clock.UtcNow = start.AddMinutes(30);
+        await harness.Time.HandleIdleAsync(TimeSpan.FromMinutes(12), IdleResolutionChoice.KeepAndResume);
+
+        var sessions = (await harness.Time.ListSessionsForTaskAsync(task.Id)).OrderBy(s => s.StartedUtc).ToList();
+        Assert.Equal(2, sessions.Count);
+        Assert.Equal(SessionEndReason.Idle, sessions[0].EndReason);
+        Assert.Equal(TimeSpan.FromMinutes(18), sessions[0].Duration);
+        Assert.True(sessions[1].IsOpen);
+        Assert.Equal(harness.Clock.UtcNow, sessions[1].StartedUtc);
+        Assert.Equal(TimeSpan.FromMinutes(18), (await harness.Time.GetTotalsAsync(task.Id)).Direct);
+
+        var settings = await harness.Time.GetSettingsAsync();
+        Assert.Null(settings.PendingResumeTaskId);
+    }
+
+    [Fact]
+    public async Task Soft_delete_parent_stops_descendant_timer_with_Deleted_and_preserves_time()
+    {
+        var harness = CreateHarness();
+        var parent = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Parent" });
+        var child = await harness.Tasks.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Child",
+            ParentTaskId = parent.Id
+        });
+
+        await harness.Time.StartOrSwitchAsync(child.Id);
+        harness.Clock.UtcNow = harness.Clock.UtcNow.AddMinutes(9);
+
+        await harness.Tasks.SoftDeleteAsync(parent.Id);
+
+        Assert.Null(await harness.Time.GetActiveSessionAsync());
+        var session = (await harness.Time.ListSessionsForTaskAsync(child.Id)).Single();
+        Assert.Equal(SessionEndReason.Deleted, session.EndReason);
+        Assert.Equal(TimeSpan.FromMinutes(9), session.Duration);
+        Assert.False(session.IsDiscarded);
+        // Child is soft-deleted with the parent cascade; totals API requires a live task.
+        Assert.Equal(TimeSpan.FromMinutes(9), session.EndedUtc!.Value - session.StartedUtc);
+    }
+
+    [Fact]
     public async Task Toggle_same_task_stops_without_completing()
     {
         var harness = CreateHarness();

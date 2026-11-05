@@ -6,6 +6,7 @@ using TaskPane.Core.Enums;
 using TaskPane.Core.Errors;
 using TaskPane.Core.Ids;
 using TaskPane.Core.Interfaces;
+using TaskPane.Core.Recurrence;
 using OverlayPlacement = TaskPane.Core.Entities.OverlayPlacement;
 
 namespace TaskPane.Application.Tests;
@@ -377,7 +378,47 @@ public sealed class DependencyAndHistoryTests
         Assert.Contains("predecessor", dependentEntry.Warning, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static Harness CreateHarness()
+    [Fact]
+    public async Task New_recurrence_occurrence_does_not_copy_dependency_edges()
+    {
+        var harness = CreateHarness(DateTimeOffset.Parse("2026-11-04T12:00:00Z"));
+        var blocker = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Blocker" });
+        var seed = await harness.Tasks.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Recurring with deps",
+            FocusBucket = FocusBucket.Today
+        });
+        await harness.Dependencies.AddRequiredAsync(blocker.Id, seed.Id);
+
+        var template = await harness.Recurrence.AttachAsync(new AttachRecurrenceRequest
+        {
+            TaskId = seed.Id,
+            Rule = new RecurrenceRule
+            {
+                Frequency = RecurrenceFrequency.Monthly,
+                MonthlyMode = MonthlyRecurrenceMode.DayOfMonth,
+                DayOfMonth = 4,
+                Interval = 1,
+                AnchorLocalDate = "2026-11-04"
+            },
+            TimeZoneId = TimeZoneInfo.Utc.Id,
+            ConvertSourceToFirstOccurrence = true
+        });
+
+        var nov = await harness.TaskRepo.FindByOccurrenceKeyAsync(template.Id, "2026-11-04");
+        Assert.NotNull(nov);
+        Assert.Single(await harness.DependencyRepo.ListForTaskAsync(nov!.Id));
+
+        await harness.Tasks.CompleteAsync(nov.Id, ParentCompletionChoice.CompleteParentOnly);
+
+        var dec = await harness.TaskRepo.FindByOccurrenceKeyAsync(template.Id, "2026-12-04");
+        Assert.NotNull(dec);
+        Assert.Empty(await harness.DependencyRepo.ListForTaskAsync(dec!.Id));
+        Assert.Single(await harness.DependencyRepo.ListForTaskAsync(nov.Id));
+        Assert.NotEqual(nov.Id, dec.Id);
+    }
+
+    private static Harness CreateHarness(DateTimeOffset? utcNow = null)
     {
         var tasks = new InMemoryTaskRepository();
         var tags = new InMemoryTagRepository();
@@ -387,7 +428,7 @@ public sealed class DependencyAndHistoryTests
         var uow = new PassthroughUnitOfWork();
         var sessions = new InMemoryTimeSessionRepository();
         var settings = new InMemorySettingsRepository();
-        var clock = new FixedClock(DateTimeOffset.Parse("2026-11-04T12:00:00Z"));
+        var clock = new FixedClock(utcNow ?? DateTimeOffset.Parse("2026-11-04T12:00:00Z"));
         var focus = new FocusService(tasks, tags, deps);
         var time = new TimeTrackingService(
             sessions,
@@ -424,7 +465,7 @@ public sealed class DependencyAndHistoryTests
             history,
             recurrence,
             NullLogger<TaskService>.Instance);
-        return new Harness(taskService, dependencies, history, time, deps, tags, organization, audit);
+        return new Harness(taskService, dependencies, history, time, deps, tags, organization, audit, recurrence, tasks);
     }
 
     private sealed record Harness(
@@ -435,7 +476,9 @@ public sealed class DependencyAndHistoryTests
         InMemoryDependencyRepository DependencyRepo,
         InMemoryTagRepository Tags,
         OrganizationService Organization,
-        InMemoryAuditRepository Audit);
+        InMemoryAuditRepository Audit,
+        RecurrenceService Recurrence,
+        InMemoryTaskRepository TaskRepo);
 
     private sealed class FixedClock(DateTimeOffset utcNow) : IClock
     {
