@@ -12,6 +12,7 @@ using TaskPane.Core.Enums;
 using TaskPane.Core.Interop;
 using TaskPane.Core.Placement;
 using MediaBrushes = System.Windows.Media.Brushes;
+using MediaColor = System.Windows.Media.Color;
 using WpfContextMenu = System.Windows.Controls.ContextMenu;
 using WpfMenuItem = System.Windows.Controls.MenuItem;
 using WpfPoint = System.Windows.Point;
@@ -55,11 +56,20 @@ public partial class OverlayWindow : Window
         _logger = logger;
         DataContext = viewModel;
         _viewModel.ConfirmParentCompletion = ConfirmParentCompletionAsync;
-        // Layered transparent host must stay fully opaque; content translucency is on RootSurface.
+        // Layered transparent host must stay fully opaque; content translucency is brush alpha
+        // on RootSurface (UIElement.Opacity composites against white on AllowsTransparency).
         Opacity = 1;
         Background = MediaBrushes.Transparent;
         // Flip to true locally for Windows QA (WPF border vs HWND #FFFFFF hairline). Do not ship true.
         _diagnosticZeroRootBorderThickness = false;
+
+        _viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(OverlayViewModel.Opacity) or null)
+            {
+                ApplyRootSurfaceOpacity();
+            }
+        };
 
         _elapsedTimer = new DispatcherTimer
         {
@@ -128,8 +138,38 @@ public partial class OverlayWindow : Window
         }
 
         ApplyRootSurfaceClip();
+        ApplyRootSurfaceOpacity();
         // First show + layout: clip HWND to RootSurface round-rect (excludes white host corners).
         ScheduleNativeRoundedRegionUpdate();
+    }
+
+    /// <summary>
+    /// Apply user opacity by scaling RootSurface background/border brush alpha.
+    /// Do not set <see cref="UIElement.Opacity"/> — on AllowsTransparency + SetWindowRgn
+    /// that path often composites against white instead of showing the desktop.
+    /// </summary>
+    private void ApplyRootSurfaceOpacity()
+    {
+        var factor = _viewModel.Opacity;
+        if (TryFindResource("TpOverlayBgColor") is MediaColor bg)
+        {
+            RootSurface.Background = new SolidColorBrush(
+                MediaColor.FromArgb(
+                    OverlaySurfaceOpacity.ScaleAlpha(bg.A, factor),
+                    bg.R,
+                    bg.G,
+                    bg.B));
+        }
+
+        if (TryFindResource("TpOverlayBorderColor") is MediaColor border)
+        {
+            RootSurface.BorderBrush = new SolidColorBrush(
+                MediaColor.FromArgb(
+                    OverlaySurfaceOpacity.ScaleAlpha(border.A, factor),
+                    border.R,
+                    border.G,
+                    border.B));
+        }
     }
 
     private void OverlayWindow_OnDpiChanged(object sender, System.Windows.DpiChangedEventArgs e)
@@ -386,6 +426,7 @@ public partial class OverlayWindow : Window
             width,
             height,
             OverlayNcHitTest.DefaultResizeBorderDip,
+            OverlayNcHitTest.DefaultCornerHitDip,
             ResolveTopCaptionBandDip(),
             positionLocked: _viewModel.Placement.PositionLocked,
             overInteractiveChrome: IsOverHeaderActionChrome(local),

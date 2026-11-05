@@ -40,7 +40,7 @@ public partial class OverlayViewModel : ObservableObject
     public ObservableCollection<TaskRowViewModel> SleepingTasks { get; } = [];
 
     [ObservableProperty]
-    private FocusBucket _selectedFocus = FocusBucket.Today;
+    private FocusBucket _selectedFocus = FocusBucket.Inbox;
 
     [ObservableProperty]
     private string _quickAddText = string.Empty;
@@ -100,7 +100,7 @@ public partial class OverlayViewModel : ObservableObject
     private int _sleepingCount;
 
     [ObservableProperty]
-    private string _focusLabel = "Today";
+    private string _focusLabel = "Inbox";
 
     [ObservableProperty]
     private string _taskCountLabel = "0 tasks";

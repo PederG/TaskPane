@@ -27,8 +27,9 @@
   <!--
     Layered host (AllowsTransparency): CompositionTarget.BackgroundColor must be Transparent
     in code — WPF defaults it to white and that paints opaque rectangular corners behind the
-    rounded RootSurface. Opacity stays off the Window (must remain 1); translucency is on
-    RootSurface only. No visible ResizeGrip — edge/corner resize via WM_NCHITTEST.
+    rounded RootSurface. Opacity stays off the Window (must remain 1); translucency is
+    brush-alpha on RootSurface (not UIElement.Opacity — that whites out on layered hosts).
+    No visible ResizeGrip — edge/corner resize via WM_NCHITTEST.
     Style={x:Null} opts out of WPF-UI's implicit Window style (opaque WindowBackground /
     ClientAreaBorder template) so the compact overlay keeps a transparent rectangular HWND.
     ResizeMode stays CanResize; DWMWA_BORDER_COLOR=COLOR_NONE hides the native DWM outline.
@@ -38,7 +39,8 @@
     re-expose white host, so layered per-pixel alpha is preferred for silhouette AA; region
     stays the white-host fallback. WM_NCHITTEST: top-left/right corners resize; top-center
     ≈ TpOverlayPad (14 DIP) is HTCAPTION for empty padding drag (not over Search/Expand/More;
-    respects position-locked). DragHeader still DragMove for the header row.
+    respects position-locked). Corner hit squares (16 DIP) win over 6 DIP edge strips so
+    HTBOTTOMRIGHT stays reachable on the rounded silhouette. DragHeader still DragMove.
   -->
   <Window.Template>
     <ControlTemplate TargetType="Window">
@@ -50,13 +52,13 @@
     </ControlTemplate>
   </Window.Template>
 
+  <!-- Background/BorderBrush alpha applied in code from Opacity (see ApplyRootSurfaceOpacity). -->
   <Border x:Name="RootSurface"
           Background="{StaticResource TpOverlayBgBrush}"
           BorderBrush="{StaticResource TpOverlayBorderBrush}"
           BorderThickness="1"
           CornerRadius="{StaticResource TpOverlayWindowRadius}"
           Padding="{StaticResource TpOverlayPadThickness}"
-          Opacity="{Binding Opacity}"
           SnapsToDevicePixels="True"
           SizeChanged="RootSurface_OnSizeChanged">
     <DockPanel LastChildFill="True">
