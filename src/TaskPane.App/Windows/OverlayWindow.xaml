@@ -31,6 +31,9 @@
     RootSurface only. No visible ResizeGrip — edge/corner resize via WM_NCHITTEST.
     Style={x:Null} opts out of WPF-UI's implicit Window style (opaque WindowBackground /
     ClientAreaBorder template) so the compact overlay keeps a transparent rectangular HWND.
+    ResizeMode stays CanResize; code-behind sets DWMWA_BORDER_COLOR=COLOR_NONE to hide the
+    native rectangular DWM outline. Do not flip to NoResize in shipping code unless a proper
+    borderless-resize path replaces WS_THICKFRAME (NoResize is Windows-only diagnostic).
   -->
   <Window.Template>
     <ControlTemplate TargetType="Window">

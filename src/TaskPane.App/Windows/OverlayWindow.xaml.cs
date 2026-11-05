@@ -1,8 +1,10 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Microsoft.Extensions.Logging;
 using TaskPane.App.Services;
 using TaskPane.App.ViewModels;
 using TaskPane.Core.Entities;
@@ -30,18 +32,26 @@ public partial class OverlayWindow : Window
     private const int HtBottomLeft = 16;
     private const int HtBottomRight = 17;
 
+    /// <summary>DWMWINDOWATTRIBUTE — suppress the native DWM window border color (Win11+).</summary>
+    private const int DwmwaBorderColor = 34;
+
+    /// <summary>DWMWA_COLOR_NONE — no visible DWM border color.</summary>
+    private const uint DwmwaColorNone = 0xFFFFFFFE;
+
     /// <summary>Invisible edge hit-test thickness (DIP) for layered-window resize.</summary>
     private const double ResizeBorderDip = 6;
 
     private readonly OverlayViewModel _viewModel;
+    private readonly ILogger<OverlayWindow> _logger;
     private readonly DispatcherTimer _elapsedTimer;
     private CancellationTokenSource? _placementSaveCts;
     private bool _suppressPlacementSave;
 
-    public OverlayWindow(OverlayViewModel viewModel)
+    public OverlayWindow(OverlayViewModel viewModel, ILogger<OverlayWindow> logger)
     {
         InitializeComponent();
         _viewModel = viewModel;
+        _logger = logger;
         DataContext = viewModel;
         _viewModel.ConfirmParentCompletion = ConfirmParentCompletionAsync;
         // Layered transparent host must stay fully opaque; content translucency is on RootSurface.
@@ -80,6 +90,8 @@ public partial class OverlayWindow : Window
         // Scrub any DWM system backdrop (Mica/Acrylic) that global theme Apply may have left on
         // this HWND. AllowsTransparency + native backdrop → opaque white corner triangles.
         IsolateFromNativeBackdrop();
+        // After HWND init + backdrop scrub: hide the native rectangular DWM border outline.
+        SuppressNativeDwmBorder();
 
         source.AddHook(WndProc);
     }
@@ -96,6 +108,7 @@ public partial class OverlayWindow : Window
 
         Background = MediaBrushes.Transparent;
         IsolateFromNativeBackdrop();
+        SuppressNativeDwmBorder();
         ApplyRootSurfaceClip();
     }
 
@@ -108,6 +121,35 @@ public partial class OverlayWindow : Window
     {
         _ = WindowBackdrop.RemoveBackdrop(this);
     }
+
+    /// <summary>
+    /// Hide the native DWM rectangular border (DWMWA_BORDER_COLOR = DWMWA_COLOR_NONE).
+    /// Keeps <see cref="ResizeMode"/> = CanResize and custom WM_NCHITTEST edge resize.
+    /// </summary>
+    private void SuppressNativeDwmBorder()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var color = unchecked((int)DwmwaColorNone);
+        var hr = DwmSetWindowAttribute(handle, DwmwaBorderColor, ref color, sizeof(int));
+        if (hr != 0)
+        {
+            _logger.LogWarning(
+                "DwmSetWindowAttribute(DWMWA_BORDER_COLOR=COLOR_NONE) failed: HRESULT 0x{HResult:X8}",
+                hr);
+        }
+    }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(
+        IntPtr hwnd,
+        int dwAttribute,
+        ref int pvAttribute,
+        int cbAttribute);
 
     private void RootSurface_OnSizeChanged(object sender, SizeChangedEventArgs e) => ApplyRootSurfaceClip();
 
