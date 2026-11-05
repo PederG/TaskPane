@@ -4,10 +4,11 @@
         xmlns:enums="clr-namespace:TaskPane.Core.Enums;assembly=TaskPane.Core"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="{Binding DisplayName}"
+        Style="{x:Null}"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
-        ResizeMode="CanResizeWithGrip"
+        ResizeMode="CanResize"
         ShowInTaskbar="False"
         SizeToContent="Height"
         MinWidth="300"
@@ -19,18 +20,20 @@
         FontFamily="Segoe UI Variable Text, Segoe UI"
         AutomationProperties.Name="TaskPane overlay"
         KeyboardNavigation.TabNavigation="Cycle"
+        SourceInitialized="OverlayWindow_OnSourceInitialized"
         LocationChanged="OverlayWindow_OnPlacementChanged"
         SizeChanged="OverlayWindow_OnPlacementChanged"
         Loaded="OverlayWindow_OnLoaded">
   <!--
-    Opacity stays off the Window (must remain 1). Window.Opacity on an AllowsTransparency
-    host composites the full HWND rectangle and leaves a square ghost behind the rounded surface.
-    Translucency is applied on RootSurface only. Default Window template ResizeGrip is omitted
-    so the grip can sit inset inside the clipped rounded surface.
+    Layered host (AllowsTransparency): CompositionTarget.BackgroundColor must be Transparent
+    in code — WPF defaults it to white and that paints opaque rectangular corners behind the
+    rounded RootSurface. Opacity stays off the Window (must remain 1); translucency is on
+    RootSurface only. No visible ResizeGrip — edge/corner resize via WM_NCHITTEST.
+    Style={x:Null} opts out of WPF-UI's implicit Window style (opaque WindowBackground /
+    ClientAreaBorder template) so the compact overlay keeps a transparent rectangular HWND.
   -->
   <Window.Template>
     <ControlTemplate TargetType="Window">
-      <!-- Transparent host only — no template ResizeGrip (that grip squares the HWND corner). -->
       <Border Background="Transparent">
         <AdornerDecorator>
           <ContentPresenter />
@@ -48,7 +51,6 @@
           Opacity="{Binding Opacity}"
           SnapsToDevicePixels="True"
           SizeChanged="RootSurface_OnSizeChanged">
-    <Grid>
     <DockPanel LastChildFill="True">
 
       <!-- Header: drag + logo + wordmark + actions -->
@@ -572,14 +574,5 @@
         </ListBox.ItemTemplate>
       </ListBox>
     </DockPanel>
-
-      <!-- Inset inside rounded clip so the grip cannot square the outer corners -->
-      <ResizeGrip HorizontalAlignment="Right"
-                  VerticalAlignment="Bottom"
-                  Margin="0,0,2,2"
-                  Opacity="0.55"
-                  IsTabStop="False"
-                  AutomationProperties.Name="Resize overlay" />
-    </Grid>
   </Border>
 </Window>
