@@ -398,8 +398,19 @@
                            Margin="0,0,0,12" />
                 <WrapPanel DockPanel.Dock="Bottom" HorizontalAlignment="Left" Margin="0,16,0,0">
                   <ui:Button Content="Add subtask" Margin="0,0,8,8" Appearance="Secondary" Command="{Binding AddSubtaskToSelectedCommand}" />
-                  <ui:Button Content="Sleep 1h" Margin="0,0,8,8" Appearance="Secondary" Command="{Binding SleepSelectedCommand}" CommandParameter="OneHour" />
-                  <ui:Button Content="Sleep ∞" Margin="0,0,8,8" Appearance="Secondary" Command="{Binding SleepSelectedCommand}" CommandParameter="Indefinitely" />
+                  <ui:Button Content="Sleep ▾" Margin="0,0,8,8" Appearance="Secondary" Click="SleepMenuButton_OnClick" AutomationProperties.Name="Sleep menu">
+                    <ui:Button.ContextMenu>
+                      <ContextMenu>
+                        <MenuItem Header="1 hour" Tag="OneHour" Click="ManagerSleepPreset_OnClick" />
+                        <MenuItem Header="Tomorrow morning" Tag="TomorrowMorning" Click="ManagerSleepPreset_OnClick" />
+                        <MenuItem Header="Next week" Tag="NextWeek" Click="ManagerSleepPreset_OnClick" />
+                        <MenuItem Header="Indefinitely" Tag="Indefinitely" Click="ManagerSleepPreset_OnClick" />
+                        <MenuItem Header="Custom date/time…" Tag="Custom" Click="ManagerSleepPreset_OnClick" />
+                        <Separator />
+                        <MenuItem Header="Wake immediately" Click="ManagerWake_OnClick" />
+                      </ContextMenu>
+                    </ui:Button.ContextMenu>
+                  </ui:Button>
                   <ui:Button Content="Wake" Margin="0,0,8,8" Appearance="Secondary" Command="{Binding WakeSelectedCommand}" />
                   <ui:Button Content="Complete" Margin="0,0,8,8" Appearance="Primary" Command="{Binding CompleteSelectedCommand}" />
                   <ui:Button Content="Delete" Margin="0,0,8,8" Appearance="Danger" Command="{Binding SoftDeleteSelectedCommand}" />
@@ -437,6 +448,12 @@
                   <ui:TextBox Text="{Binding EditDeadlineDate, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8" />
                   <TextBlock Style="{StaticResource TpFieldLabel}" Text="Deadline time (optional; leave empty for date-only)" />
                   <ui:TextBox Text="{Binding EditDeadlineTime, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12" />
+                  <TextBlock Style="{StaticResource TpFieldLabel}" Text="Sleep (independent of deadline)" />
+                  <TextBlock Text="{Binding SelectedSleepSummary}"
+                             Margin="0,0,0,12"
+                             Opacity="0.8"
+                             TextWrapping="Wrap"
+                             AutomationProperties.Name="Selected task sleep summary" />
                   <TextBlock Style="{StaticResource TpFieldLabel}" Text="Waiting for (distinct from sleep / blocked)" />
                   <ui:TextBox Text="{Binding EditWaitingFor, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8" />
                   <TextBlock Style="{StaticResource TpFieldLabel}" Text="Waiting follow-up (UTC, optional)" />

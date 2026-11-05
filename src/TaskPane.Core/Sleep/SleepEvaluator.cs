@@ -1,3 +1,4 @@
+using System.Globalization;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 
@@ -27,6 +28,15 @@ public static class SleepEvaluator
         => IsCurrentlySleeping(task, utcNow)
            || (parent is not null && IsCurrentlySleeping(parent, utcNow));
 
+    /// <summary>
+    /// True when a timed sleep has passed and the task should reappear without an explicit wake.
+    /// Indefinite sleep never auto-expires.
+    /// </summary>
+    public static bool HasExpired(TaskItem task, DateTimeOffset utcNow)
+        => !task.SleepIndefinitely
+           && task.SleepUntilUtc is { } until
+           && until <= utcNow;
+
     public static DateTimeOffset? ResolveWakeUtc(
         SleepPreset preset,
         DateTimeOffset utcNow,
@@ -43,6 +53,45 @@ public static class SleepEvaluator
                 ?? throw new ArgumentException("Custom sleep requires an until timestamp.", nameof(customUntilUtc)),
             _ => throw new ArgumentOutOfRangeException(nameof(preset))
         };
+    }
+
+    /// <summary>
+    /// Compact wake label for sleeping lists (local wall clock). Empty when not sleeping.
+    /// </summary>
+    public static string FormatWakeLabel(
+        TaskItem task,
+        DateTimeOffset utcNow,
+        TimeZoneInfo? localTz = null)
+    {
+        if (!IsCurrentlySleeping(task, utcNow))
+        {
+            return string.Empty;
+        }
+
+        if (task.SleepIndefinitely)
+        {
+            return "Until woken";
+        }
+
+        if (task.SleepUntilUtc is not { } until)
+        {
+            return "Until woken";
+        }
+
+        var tz = localTz ?? TimeZoneInfo.Local;
+        var local = TimeZoneInfo.ConvertTime(until, tz);
+        var localNow = TimeZoneInfo.ConvertTime(utcNow, tz);
+        if (local.Date == localNow.Date)
+        {
+            return $"Until {local.ToString("t", CultureInfo.CurrentCulture)}";
+        }
+
+        if (local.Date == localNow.Date.AddDays(1))
+        {
+            return $"Until tomorrow {local.ToString("t", CultureInfo.CurrentCulture)}";
+        }
+
+        return $"Until {local.ToString("g", CultureInfo.CurrentCulture)}";
     }
 
     private static DateTimeOffset TomorrowMorningUtc(DateTimeOffset utcNow, TimeZoneInfo localTz)

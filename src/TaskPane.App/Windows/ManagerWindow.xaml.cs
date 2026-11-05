@@ -19,6 +19,7 @@ public partial class ManagerWindow : FluentWindow
         _viewModel = viewModel;
         DataContext = viewModel;
         _viewModel.FocusTitleRequested += OnFocusTitleRequested;
+        _viewModel.PromptCustomSleepUntil = PromptCustomSleepUntil;
         // Watch with explicit Mica: system theme changes re-apply backdrop on this FluentWindow
         // only (UpdateBackground on the observed HWND). Global Apply still uses None so the
         // compact overlay stays free of native backdrop; MainWindow is pinned to Manager.
@@ -33,6 +34,41 @@ public partial class ManagerWindow : FluentWindow
             Keyboard.Focus(TitleEditBox);
             TitleEditBox.SelectAll();
         }, DispatcherPriority.Input);
+    }
+
+    private void SleepMenuButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { ContextMenu: { } menu } element)
+        {
+            menu.PlacementTarget = element;
+            menu.IsOpen = true;
+        }
+    }
+
+    private void ManagerSleepPreset_OnClick(object sender, RoutedEventArgs e)
+    {
+        var tag = (sender as System.Windows.Controls.MenuItem)?.Tag as string ?? "OneHour";
+        if (_viewModel.SleepSelectedCommand.CanExecute(tag))
+        {
+            _viewModel.SleepSelectedCommand.Execute(tag);
+        }
+    }
+
+    private void ManagerWake_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.WakeSelectedCommand.CanExecute(null))
+        {
+            _viewModel.WakeSelectedCommand.Execute(null);
+        }
+    }
+
+    private DateTimeOffset? PromptCustomSleepUntil(TaskRowViewModel row)
+    {
+        var dialog = new SleepUntilDialog
+        {
+            Owner = this
+        };
+        return dialog.ShowDialog() == true ? dialog.SelectedUntilUtc : null;
     }
 
     public Task InitializeAsync() => _viewModel.InitializeAsync();

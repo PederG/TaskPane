@@ -196,6 +196,77 @@ public sealed class TaskServiceTests
     }
 
     [Fact]
+    public async Task Custom_sleep_hides_until_expiry_then_auto_wakes_without_clearing_fields()
+    {
+        var sut = CreateSut(out var repo);
+        var task = await sut.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Custom nap",
+            FocusBucket = FocusBucket.Today,
+            Priority = TaskPriority.High,
+            Notes = "keep me",
+            DeadlineLocalDate = "2026-12-15"
+        });
+
+        var until = DateTimeOffset.UtcNow.AddMinutes(45);
+        await sut.SleepAsync(new SleepTaskRequest
+        {
+            Id = task.Id,
+            Preset = SleepPreset.Custom,
+            CustomUntilUtc = until
+        });
+
+        var sleeping = repo.Items.Single(t => t.Id.Equals(task.Id));
+        Assert.False(sleeping.SleepIndefinitely);
+        Assert.Equal(until, sleeping.SleepUntilUtc);
+        Assert.Equal("keep me", sleeping.Notes);
+        Assert.Equal(TaskPriority.High, sleeping.Priority);
+        Assert.Equal("2026-12-15", sleeping.DeadlineLocalDate);
+        Assert.Empty(await sut.ListVisibleRootsAsync(FocusBucket.Today));
+        Assert.Contains(await sut.ListSleepingRootsAsync(), t => t.Id.Equals(task.Id));
+
+        // Simulate clock past wake: evaluator hides no longer; stored fields stay until explicit wake.
+        sleeping.SleepUntilUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
+        Assert.Contains(await sut.ListVisibleRootsAsync(FocusBucket.Today), t => t.Id.Equals(task.Id));
+        Assert.DoesNotContain(await sut.ListSleepingRootsAsync(), t => t.Id.Equals(task.Id));
+        Assert.Equal("keep me", repo.Items.Single(t => t.Id.Equals(task.Id)).Notes);
+        Assert.Equal("2026-12-15", repo.Items.Single(t => t.Id.Equals(task.Id)).DeadlineLocalDate);
+    }
+
+    [Fact]
+    public async Task Sleeping_subtask_hides_only_itself_parent_and_sibling_stay_visible()
+    {
+        var sut = CreateSut(out _);
+        var parent = await sut.CreateAsync(new CreateTaskRequest { Title = "Parent", FocusBucket = FocusBucket.Today });
+        var childA = await sut.CreateAsync(new CreateTaskRequest { Title = "A", ParentTaskId = parent.Id });
+        var childB = await sut.CreateAsync(new CreateTaskRequest { Title = "B", ParentTaskId = parent.Id });
+
+        await sut.SleepAsync(new SleepTaskRequest { Id = childA.Id, Preset = SleepPreset.TomorrowMorning });
+
+        Assert.Contains(await sut.ListVisibleRootsAsync(FocusBucket.Today), t => t.Id.Equals(parent.Id));
+        var visibleChildren = await sut.QueryChildrenAsync(parent.Id, new TaskQuery
+        {
+            OverlayVisibility = true,
+            FocusBucket = FocusBucket.Today
+        });
+        Assert.DoesNotContain(visibleChildren, t => t.Id.Equals(childA.Id));
+        Assert.Contains(visibleChildren, t => t.Id.Equals(childB.Id));
+    }
+
+    [Fact]
+    public async Task Wake_immediately_restores_visibility()
+    {
+        var sut = CreateSut(out _);
+        var task = await sut.CreateAsync(new CreateTaskRequest { Title = "Wake me", FocusBucket = FocusBucket.Today });
+        await sut.SleepAsync(new SleepTaskRequest { Id = task.Id, Preset = SleepPreset.NextWeek });
+        Assert.Empty(await sut.ListVisibleRootsAsync(FocusBucket.Today));
+
+        await sut.WakeAsync(task.Id);
+        Assert.Contains(await sut.ListVisibleRootsAsync(FocusBucket.Today), t => t.Id.Equals(task.Id));
+        Assert.DoesNotContain(await sut.ListSleepingRootsAsync(), t => t.Id.Equals(task.Id));
+    }
+
+    [Fact]
     public async Task Search_filters_by_title_and_notes()
     {
         var sut = CreateSut(out _);

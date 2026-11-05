@@ -268,11 +268,19 @@
                       Content="Wake"
                       Padding="8,2"
                       Command="{Binding DataContext.WakeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                      CommandParameter="{Binding}" />
-              <TextBlock Text="{Binding Title}"
-                         Foreground="{StaticResource TpOverlayMutedBrush}"
-                         TextTrimming="CharacterEllipsis"
-                         VerticalAlignment="Center" />
+                      CommandParameter="{Binding}"
+                      ToolTip="Wake immediately"
+                      AutomationProperties.Name="Wake immediately" />
+              <StackPanel VerticalAlignment="Center" Margin="0,0,8,0">
+                <TextBlock Text="{Binding Title}"
+                           Foreground="{StaticResource TpOverlayMutedBrush}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding SleepWakeText}"
+                           Foreground="{StaticResource TpOverlayMetaBrush}"
+                           FontSize="11"
+                           TextTrimming="CharacterEllipsis"
+                           AutomationProperties.Name="Sleep wake time" />
+              </StackPanel>
             </DockPanel>
           </DataTemplate>
         </ListBox.ItemTemplate>
@@ -601,8 +609,26 @@
                 <ui:SymbolIcon Symbol="MoreHorizontal24" FontSize="14" />
                 <Button.ContextMenu>
                   <ContextMenu>
-                    <MenuItem Header="Sleep 1 hour"
-                              Click="TaskMenuSleep_OnClick" />
+                    <MenuItem Header="Sleep">
+                      <MenuItem Header="1 hour"
+                                Tag="OneHour"
+                                Click="TaskMenuSleepPreset_OnClick" />
+                      <MenuItem Header="Tomorrow morning"
+                                Tag="TomorrowMorning"
+                                Click="TaskMenuSleepPreset_OnClick" />
+                      <MenuItem Header="Next week"
+                                Tag="NextWeek"
+                                Click="TaskMenuSleepPreset_OnClick" />
+                      <MenuItem Header="Indefinitely"
+                                Tag="Indefinitely"
+                                Click="TaskMenuSleepPreset_OnClick" />
+                      <MenuItem Header="Custom date/time…"
+                                Tag="Custom"
+                                Click="TaskMenuSleepPreset_OnClick" />
+                      <Separator />
+                      <MenuItem Header="Wake immediately"
+                                Click="TaskMenuWake_OnClick" />
+                    </MenuItem>
                     <MenuItem Header="Add subtask"
                               Click="TaskMenuAddSubtask_OnClick">
                       <MenuItem.Style>

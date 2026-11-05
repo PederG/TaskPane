@@ -56,6 +56,9 @@ public partial class TaskRowViewModel : ObservableObject
     private bool _isSleeping;
 
     [ObservableProperty]
+    private string _sleepWakeText = string.Empty;
+
+    [ObservableProperty]
     private bool _isWaiting;
 
     [ObservableProperty]
@@ -120,6 +123,10 @@ public partial class TaskRowViewModel : ObservableObject
 
     public bool IsRecurring { get; private set; }
 
+    public DateTimeOffset? SleepUntilUtc { get; private set; }
+
+    public bool SleepIndefinitely { get; private set; }
+
     public void Apply(
         TaskItem task,
         SubtaskProgress? progress = null,
@@ -145,8 +152,11 @@ public partial class TaskRowViewModel : ObservableObject
         ProjectId = task.ProjectId;
         OccurrenceKey = task.OccurrenceKey;
         IsRecurring = task.IsRecurringOccurrence;
+        SleepUntilUtc = task.SleepUntilUtc;
+        SleepIndefinitely = task.SleepIndefinitely;
         IsOverdue = DeadlineEvaluator.IsOverdue(task, now);
         IsSleeping = SleepEvaluator.IsCurrentlySleeping(task, now);
+        SleepWakeText = SleepEvaluator.FormatWakeLabel(task, now);
         IsWaiting = task.IsWaiting;
         DeadlineText = DeadlineEvaluator.CompactPreview(task) ?? string.Empty;
         WaitingText = task.IsWaiting ? $"Waiting: {task.WaitingFor}" : string.Empty;
@@ -223,7 +233,7 @@ public partial class TaskRowViewModel : ObservableObject
 
         if (IsSleeping)
         {
-            parts.Add("Sleeping");
+            parts.Add(string.IsNullOrWhiteSpace(SleepWakeText) ? "Sleeping" : $"Sleeping · {SleepWakeText}");
         }
 
         if (IsRecurring)
