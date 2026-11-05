@@ -173,6 +173,72 @@ public sealed class SqlitePersistenceTests
     }
 
     [Fact]
+    public async Task Custom_sleep_survives_restart_then_auto_wakes_after_expiry()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "TaskPaneTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var dbPath = Path.Combine(root, "tasks.db");
+        var until = DateTimeOffset.UtcNow.AddHours(3);
+        TaskId taskId;
+
+        try
+        {
+            await using (var host1 = Build(dbPath))
+            {
+                await host1.GetRequiredService<SqliteMigrator>().MigrateAsync();
+                var tasks = host1.GetRequiredService<TaskService>();
+                var created = await tasks.CreateAsync(new CreateTaskRequest
+                {
+                    Title = "Restart nap",
+                    Notes = "sticky notes",
+                    FocusBucket = FocusBucket.Today,
+                    Priority = TaskPriority.Low,
+                    DeadlineLocalDate = "2026-12-20"
+                });
+                taskId = created.Id;
+                await tasks.SleepAsync(new SleepTaskRequest
+                {
+                    Id = taskId,
+                    Preset = SleepPreset.Custom,
+                    CustomUntilUtc = until
+                });
+                Assert.Empty(await tasks.ListVisibleRootsAsync(FocusBucket.Today));
+            }
+
+            await using (var host2 = Build(dbPath))
+            {
+                await host2.GetRequiredService<SqliteMigrator>().MigrateAsync();
+                var tasks = host2.GetRequiredService<TaskService>();
+                var loaded = await tasks.GetAsync(taskId);
+                Assert.NotNull(loaded);
+                Assert.Equal(until, loaded!.SleepUntilUtc);
+                Assert.False(loaded.SleepIndefinitely);
+                Assert.Equal("sticky notes", loaded.Notes);
+                Assert.Equal(TaskPriority.Low, loaded.Priority);
+                Assert.Equal("2026-12-20", loaded.DeadlineLocalDate);
+                Assert.Empty(await tasks.ListVisibleRootsAsync(FocusBucket.Today));
+                Assert.Contains(await tasks.ListSleepingRootsAsync(), t => t.Id.Equals(taskId));
+
+                // Expire sleep in-place (simulates wall-clock passing across restart).
+                loaded.SleepUntilUtc = DateTimeOffset.UtcNow.AddMinutes(-5);
+                await host2.GetRequiredService<TaskPane.Core.Interfaces.ITaskRepository>()
+                    .UpdateAsync(loaded);
+
+                Assert.Contains(await tasks.ListVisibleRootsAsync(FocusBucket.Today), t => t.Id.Equals(taskId));
+                Assert.DoesNotContain(await tasks.ListSleepingRootsAsync(), t => t.Id.Equals(taskId));
+                var after = await tasks.GetAsync(taskId);
+                Assert.Equal("sticky notes", after!.Notes);
+                Assert.Equal("2026-12-20", after.DeadlineLocalDate);
+                Assert.Equal(TaskPriority.Low, after.Priority);
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
     public async Task Phase3_migration_enforces_one_open_session_and_persists_switch()
     {
         var root = Path.Combine(Path.GetTempPath(), "TaskPaneTests", Guid.NewGuid().ToString("N"));

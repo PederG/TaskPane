@@ -65,8 +65,13 @@ public partial class OverlayWindow : Window
         {
             Interval = TimeSpan.FromSeconds(1)
         };
-        _elapsedTimer.Tick += (_, _) => _viewModel.TickActiveElapsed();
+        _elapsedTimer.Tick += (_, _) =>
+        {
+            _viewModel.TickActiveElapsed();
+            _ = _viewModel.CheckAutoWakeAsync();
+        };
         _elapsedTimer.Start();
+        _viewModel.PromptCustomSleepUntil = PromptCustomSleepUntil;
 
         DpiChanged += OverlayWindow_OnDpiChanged;
     }
@@ -666,12 +671,35 @@ public partial class OverlayWindow : Window
         }
     }
 
-    private void TaskMenuSleep_OnClick(object sender, RoutedEventArgs e)
+    private void TaskMenuSleepPreset_OnClick(object sender, RoutedEventArgs e)
     {
-        if (TryGetRow(sender, out var row) && _viewModel.SleepCommand.CanExecute(row))
+        if (!TryGetRow(sender, out var row))
         {
-            _viewModel.SleepCommand.Execute(row);
+            return;
         }
+
+        var tag = (sender as WpfMenuItem)?.Tag as string;
+        var preset = Enum.TryParse<SleepPreset>(tag, ignoreCase: true, out var parsed)
+            ? parsed
+            : SleepPreset.OneHour;
+        _ = _viewModel.SleepWithPresetAsync(row, preset);
+    }
+
+    private void TaskMenuWake_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (TryGetRow(sender, out var row) && _viewModel.WakeCommand.CanExecute(row))
+        {
+            _viewModel.WakeCommand.Execute(row);
+        }
+    }
+
+    private DateTimeOffset? PromptCustomSleepUntil(TaskRowViewModel row)
+    {
+        var dialog = new SleepUntilDialog
+        {
+            Owner = this
+        };
+        return dialog.ShowDialog() == true ? dialog.SelectedUntilUtc : null;
     }
 
     private void TaskMenuAddSubtask_OnClick(object sender, RoutedEventArgs e)
@@ -709,15 +737,30 @@ public partial class OverlayWindow : Window
     private static bool TryGetRow(object sender, out TaskRowViewModel row)
     {
         row = null!;
-        if (sender is WpfMenuItem { Parent: WpfContextMenu { DataContext: TaskRowViewModel fromMenu } })
+        // Nested Sleep submenu items parent through MenuItem → ContextMenu; walk up.
+        DependencyObject? current = sender as DependencyObject;
+        while (current is not null)
         {
-            row = fromMenu;
-            return true;
+            if (current is WpfContextMenu { DataContext: TaskRowViewModel fromMenu })
+            {
+                row = fromMenu;
+                return true;
+            }
+
+            if (current is FrameworkElement { DataContext: TaskRowViewModel fromElement }
+                and not WpfMenuItem and not WpfContextMenu)
+            {
+                row = fromElement;
+                return true;
+            }
+
+            current = LogicalTreeHelper.GetParent(current)
+                      ?? (current is Visual visual ? VisualTreeHelper.GetParent(visual) : null);
         }
 
-        if (sender is FrameworkElement { DataContext: TaskRowViewModel fromElement })
+        if (sender is FrameworkElement { DataContext: TaskRowViewModel fallback })
         {
-            row = fromElement;
+            row = fallback;
             return true;
         }
 

@@ -131,6 +131,9 @@ public partial class OverlayViewModel : ObservableObject
     public event Action? QuitRequested;
     public Func<string, int, Task<ParentCompletionChoice>>? ConfirmParentCompletion { get; set; }
 
+    /// <summary>Shows a custom sleep-until picker; return null to cancel.</summary>
+    public Func<TaskRowViewModel, DateTimeOffset?>? PromptCustomSleepUntil { get; set; }
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         Placement = await _overlaySettings.GetAsync(cancellationToken).ConfigureAwait(true);
@@ -438,18 +441,43 @@ public partial class OverlayViewModel : ObservableObject
 
     [RelayCommand]
     private async Task SleepAsync(TaskRowViewModel? row)
+        => await SleepWithPresetAsync(row, SleepPreset.OneHour).ConfigureAwait(true);
+
+    [RelayCommand]
+    private async Task SleepWithPresetAsync(SleepPresetArgs? args)
+    {
+        if (args is null)
+        {
+            return;
+        }
+
+        await SleepWithPresetAsync(args.Row, args.Preset).ConfigureAwait(true);
+    }
+
+    public async Task SleepWithPresetAsync(TaskRowViewModel? row, SleepPreset preset)
     {
         if (row is null)
         {
             return;
         }
 
+        DateTimeOffset? customUntil = null;
+        if (preset == SleepPreset.Custom)
+        {
+            customUntil = PromptCustomSleepUntil?.Invoke(row);
+            if (customUntil is null)
+            {
+                return;
+            }
+        }
+
         await _taskService.SleepAsync(new SleepTaskRequest
         {
             Id = row.Id,
-            Preset = SleepPreset.OneHour
+            Preset = preset,
+            CustomUntilUtc = customUntil
         }).ConfigureAwait(true);
-        StatusMessage = "Task sleeping for 1 hour.";
+        StatusMessage = SleepStatusMessage(preset);
         await RefreshAsync().ConfigureAwait(true);
     }
 
@@ -462,8 +490,40 @@ public partial class OverlayViewModel : ObservableObject
         }
 
         await _taskService.WakeAsync(row.Id).ConfigureAwait(true);
+        StatusMessage = "Task woken.";
         await RefreshAsync().ConfigureAwait(true);
     }
+
+    /// <summary>
+    /// Overlay auto-wake: when a timed sleep has expired, refresh so the task reappears
+    /// without an explicit Wake (deadline/notes/priority/deps/time remain untouched).
+    /// </summary>
+    public async Task CheckAutoWakeAsync()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var expiredVisible = SleepingTasks.Any(t =>
+            !t.SleepIndefinitely
+            && t.SleepUntilUtc is { } until
+            && until <= now);
+        if (!expiredVisible)
+        {
+            return;
+        }
+
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    private static string SleepStatusMessage(SleepPreset preset) => preset switch
+    {
+        SleepPreset.OneHour => "Task sleeping for 1 hour.",
+        SleepPreset.TomorrowMorning => "Task sleeping until tomorrow morning.",
+        SleepPreset.NextWeek => "Task sleeping until next week.",
+        SleepPreset.Indefinitely => "Task sleeping indefinitely.",
+        SleepPreset.Custom => "Task sleeping until the chosen time.",
+        _ => "Task sleeping."
+    };
+
+    public sealed record SleepPresetArgs(TaskRowViewModel Row, SleepPreset Preset);
 
     [RelayCommand]
     private void ShowNotes(TaskRowViewModel? row)

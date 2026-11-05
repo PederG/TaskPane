@@ -289,6 +289,12 @@ public partial class ManagerViewModel : ObservableObject
     /// <summary>Raised after creating a subtask so the manager can focus the title field.</summary>
     public event Action? FocusTitleRequested;
 
+    /// <summary>Shows a custom sleep-until picker; return null to cancel.</summary>
+    public Func<TaskRowViewModel, DateTimeOffset?>? PromptCustomSleepUntil { get; set; }
+
+    [ObservableProperty]
+    private string _selectedSleepSummary = "Not sleeping";
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await LoadCatalogAsync(cancellationToken).ConfigureAwait(true);
@@ -730,6 +736,7 @@ public partial class ManagerViewModel : ObservableObject
             EditWaitingFollowUp = string.Empty;
             EditProject = null;
             EditTagsCsv = string.Empty;
+            SelectedSleepSummary = "Not sleeping";
             return;
         }
 
@@ -743,6 +750,9 @@ public partial class ManagerViewModel : ObservableObject
         EditWaitingFollowUp = value.WaitingFollowUpUtc?.ToString("u") ?? string.Empty;
         EditProject = Projects.FirstOrDefault(p => value.ProjectId is { } pid && p.Id.Equals(pid));
         EditTagsCsv = value.TagsText;
+        SelectedSleepSummary = value.IsSleeping
+            ? (string.IsNullOrWhiteSpace(value.SleepWakeText) ? "Sleeping" : value.SleepWakeText)
+            : "Not sleeping";
         RecurrenceAnchorDate = string.IsNullOrWhiteSpace(RecurrenceAnchorDate)
             ? DateTime.Now.ToString("yyyy-MM-dd")
             : RecurrenceAnchorDate;
@@ -962,10 +972,21 @@ public partial class ManagerViewModel : ObservableObject
             ? parsed
             : SleepPreset.OneHour;
 
+        DateTimeOffset? customUntil = null;
+        if (preset == SleepPreset.Custom)
+        {
+            customUntil = PromptCustomSleepUntil?.Invoke(SelectedTask);
+            if (customUntil is null)
+            {
+                return;
+            }
+        }
+
         await _taskService.SleepAsync(new SleepTaskRequest
         {
             Id = SelectedTask.Id,
-            Preset = preset
+            Preset = preset,
+            CustomUntilUtc = customUntil
         }).ConfigureAwait(true);
 
         await RefreshAsync().ConfigureAwait(true);

@@ -72,4 +72,92 @@ public sealed class DeadlineAndSleepTests
         Assert.True(SleepEvaluator.IsHiddenBySleep(child, parent, now));
         Assert.False(SleepEvaluator.IsCurrentlySleeping(child, now));
     }
+
+    [Fact]
+    public void Timed_sleep_expires_without_mutating_deadline_or_priority()
+    {
+        var now = DateTimeOffset.Parse("2026-11-04T12:00:00Z");
+        var task = new TaskItem
+        {
+            Id = TaskId.New(),
+            Title = "Nap",
+            Priority = TaskPriority.High,
+            DeadlineLocalDate = "2026-12-01",
+            SleepUntilUtc = now.AddMinutes(30)
+        };
+
+        Assert.True(SleepEvaluator.IsCurrentlySleeping(task, now));
+        Assert.False(SleepEvaluator.HasExpired(task, now));
+
+        var after = now.AddHours(1);
+        Assert.False(SleepEvaluator.IsCurrentlySleeping(task, after));
+        Assert.True(SleepEvaluator.HasExpired(task, after));
+        Assert.Equal(TaskPriority.High, task.Priority);
+        Assert.Equal("2026-12-01", task.DeadlineLocalDate);
+        Assert.Equal(now.AddMinutes(30), task.SleepUntilUtc);
+    }
+
+    [Fact]
+    public void Custom_and_named_presets_resolve_wake_times()
+    {
+        var now = DateTimeOffset.Parse("2026-11-04T12:00:00Z");
+        var custom = DateTimeOffset.Parse("2026-11-05T18:30:00Z");
+        Assert.Equal(custom, SleepEvaluator.ResolveWakeUtc(SleepPreset.Custom, now, TimeZoneInfo.Utc, custom));
+        Assert.Equal(now.AddDays(7), SleepEvaluator.ResolveWakeUtc(SleepPreset.NextWeek, now, TimeZoneInfo.Utc));
+        Assert.Null(SleepEvaluator.ResolveWakeUtc(SleepPreset.Indefinitely, now, TimeZoneInfo.Utc));
+
+        var morning = SleepEvaluator.ResolveWakeUtc(SleepPreset.TomorrowMorning, now, TimeZoneInfo.Utc);
+        Assert.NotNull(morning);
+        var localMorning = TimeZoneInfo.ConvertTime(morning!.Value, TimeZoneInfo.Utc);
+        Assert.Equal(9, localMorning.Hour);
+        Assert.Equal(0, localMorning.Minute);
+        Assert.Equal(new DateOnly(2026, 11, 5), DateOnly.FromDateTime(localMorning.DateTime));
+    }
+
+    [Fact]
+    public void Child_sleep_is_independent_of_parent_visibility()
+    {
+        var now = DateTimeOffset.Parse("2026-11-04T12:00:00Z");
+        var parent = new TaskItem { Id = TaskId.New(), Title = "Parent" };
+        var sleepingChild = new TaskItem
+        {
+            Id = TaskId.New(),
+            Title = "Child",
+            ParentTaskId = parent.Id,
+            SleepUntilUtc = now.AddHours(3)
+        };
+        var awakeSibling = new TaskItem
+        {
+            Id = TaskId.New(),
+            Title = "Sibling",
+            ParentTaskId = parent.Id
+        };
+
+        Assert.True(SleepEvaluator.IsCurrentlySleeping(sleepingChild, now));
+        Assert.True(SleepEvaluator.IsHiddenBySleep(sleepingChild, parent, now));
+        Assert.False(SleepEvaluator.IsHiddenBySleep(awakeSibling, parent, now));
+        Assert.False(SleepEvaluator.IsCurrentlySleeping(parent, now));
+    }
+
+    [Fact]
+    public void Indefinite_sleep_never_auto_expires_and_formats_wake_label()
+    {
+        var now = DateTimeOffset.Parse("2026-11-04T12:00:00Z");
+        var task = new TaskItem
+        {
+            Id = TaskId.New(),
+            Title = "Parked",
+            SleepIndefinitely = true
+        };
+
+        Assert.True(SleepEvaluator.IsCurrentlySleeping(task, now.AddYears(1)));
+        Assert.False(SleepEvaluator.HasExpired(task, now.AddYears(1)));
+        Assert.Equal("Until woken", SleepEvaluator.FormatWakeLabel(task, now, TimeZoneInfo.Utc));
+
+        task.SleepIndefinitely = false;
+        task.SleepUntilUtc = now.AddHours(2);
+        var label = SleepEvaluator.FormatWakeLabel(task, now, TimeZoneInfo.Utc);
+        Assert.StartsWith("Until ", label);
+        Assert.DoesNotContain("tomorrow", label, StringComparison.OrdinalIgnoreCase);
+    }
 }
