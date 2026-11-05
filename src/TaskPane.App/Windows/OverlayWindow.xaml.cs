@@ -53,6 +53,13 @@ public partial class OverlayWindow : Window
     private RoundWindowRegionParams? _appliedNativeRegion;
     private IntPtr _hookedHwnd;
 
+    /// <summary>
+    /// Local diagnostic only: set true before launch to zero RootSurface BorderThickness so
+    /// Windows QA can tell a #FFFFFF left/top hairline (HWND host) from the WPF border stroke.
+    /// Shipping stays false — the 1px left/top region inset addresses the host hairline.
+    /// </summary>
+    private bool _diagnosticZeroRootBorderThickness;
+
     public OverlayWindow(OverlayViewModel viewModel, ILogger<OverlayWindow> logger)
     {
         InitializeComponent();
@@ -63,6 +70,8 @@ public partial class OverlayWindow : Window
         // Layered transparent host must stay fully opaque; content translucency is on RootSurface.
         Opacity = 1;
         Background = MediaBrushes.Transparent;
+        // Flip to true locally for Windows QA (WPF border vs HWND #FFFFFF hairline). Do not ship true.
+        _diagnosticZeroRootBorderThickness = false;
 
         _elapsedTimer = new DispatcherTimer
         {
@@ -125,6 +134,11 @@ public partial class OverlayWindow : Window
         Background = MediaBrushes.Transparent;
         IsolateFromNativeBackdrop();
         SuppressNativeDwmBorder();
+        if (_diagnosticZeroRootBorderThickness)
+        {
+            RootSurface.BorderThickness = new Thickness(0);
+        }
+
         ApplyRootSurfaceClip();
         // First show + layout: clip HWND to RootSurface round-rect (excludes white host corners).
         ScheduleNativeRoundedRegionUpdate();
@@ -247,7 +261,10 @@ public partial class OverlayWindow : Window
 
     /// <summary>
     /// Native HWND clip matching RootSurface physical bounds (rounded). Excludes the white
-    /// layered host that can sit ~1px outside RootSurface. SetWindowRgn owns the HRGN on success.
+    /// layered host outside RootSurface (incl. 1px left/top inset for the host hairline).
+    /// SetWindowRgn owns the HRGN on success. CreateRoundRectRgn is binary (jagged on the
+    /// native silhouette); WPF CornerRadius remains the smooth visible edge — if the outer
+    /// silhouette stays unacceptable, prefer layered per-pixel alpha over fake outlines.
     /// </summary>
     private void ApplyNativeRoundedRegion()
     {
@@ -274,12 +291,14 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        WpfPoint rootTopLeftDip;
-        WpfPoint rootBottomRightDip;
+        // PointToScreen returns screen coords already consistent with GetWindowRect — do not
+        // multiply by DpiScale again (only the DIP radius is scaled in Compute).
+        WpfPoint rootTopLeftScreen;
+        WpfPoint rootBottomRightScreen;
         try
         {
-            rootTopLeftDip = RootSurface.PointToScreen(new WpfPoint(0, 0));
-            rootBottomRightDip = RootSurface.PointToScreen(
+            rootTopLeftScreen = RootSurface.PointToScreen(new WpfPoint(0, 0));
+            rootBottomRightScreen = RootSurface.PointToScreen(
                 new WpfPoint(RootSurface.ActualWidth, RootSurface.ActualHeight));
         }
         catch (InvalidOperationException)
@@ -292,10 +311,10 @@ public partial class OverlayWindow : Window
         var region = RoundWindowRegionGeometry.Compute(
             windowRect.Left,
             windowRect.Top,
-            rootTopLeftDip.X,
-            rootTopLeftDip.Y,
-            rootBottomRightDip.X,
-            rootBottomRightDip.Y,
+            rootTopLeftScreen.X,
+            rootTopLeftScreen.Y,
+            rootBottomRightScreen.X,
+            rootBottomRightScreen.Y,
             dpi.DpiScaleX,
             dpi.DpiScaleY,
             ResolveCornerRadiusDip());
