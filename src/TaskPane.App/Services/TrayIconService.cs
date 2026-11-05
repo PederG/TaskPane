@@ -12,6 +12,7 @@ public sealed class TrayIconService : IDisposable
     public event Action? OpenManagerRequested;
     public event Action? ShowQuickCaptureRequested;
     public event Action? QuitRequested;
+    public event Action? BalloonTipClicked;
 
     public void Initialize()
     {
@@ -31,6 +32,7 @@ public sealed class TrayIconService : IDisposable
         menu.Items.Add("Quit TaskPane", null, (_, _) => QuitRequested?.Invoke());
         _notifyIcon.ContextMenuStrip = menu;
         _notifyIcon.DoubleClick += (_, _) => ShowOverlayRequested?.Invoke();
+        _notifyIcon.BalloonTipClicked += (_, _) => BalloonTipClicked?.Invoke();
         _notifyIcon.MouseMove += (_, _) =>
         {
             // Keep tooltip short and free of task notes.

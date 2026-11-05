@@ -41,4 +41,21 @@ public sealed class QuietHoursEvaluatorTests
             DateTimeOffset.Parse("2026-11-04T23:00:00Z"),
             Utc));
     }
+
+    [Theory]
+    [InlineData("2026-11-05T11:59:00Z", false)]
+    [InlineData("2026-11-05T12:00:00Z", true)]
+    [InlineData("2026-11-05T13:30:00Z", true)]
+    [InlineData("2026-11-05T14:00:00Z", false)]
+    public void Same_day_quiet_window(string utc, bool expected)
+    {
+        var settings = new ReminderSettings
+        {
+            QuietHoursEnabled = true,
+            QuietStartLocal = "12:00",
+            QuietEndLocal = "14:00"
+        };
+
+        Assert.Equal(expected, QuietHoursEvaluator.IsInQuietHours(settings, DateTimeOffset.Parse(utc), Utc));
+    }
 }

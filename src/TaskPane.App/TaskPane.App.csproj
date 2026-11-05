@@ -2,7 +2,8 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- windows10 TFM enables WinRT toast APIs for unpackaged self-contained WPF. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon />
@@ -12,10 +13,11 @@
     <Product>TaskPane</Product>
     <AssemblyTitle>TaskPane</AssemblyTitle>
     <Description>Offline-first Windows task overlay</Description>
-    <Version>0.7.0</Version>
-    <InformationalVersion>0.7.0-phase7</InformationalVersion>
+    <Version>0.7.1</Version>
+    <InformationalVersion>0.7.1-reminders</InformationalVersion>
     <Company>TaskPane</Company>
     <Copyright>Copyright (c) TaskPane contributors</Copyright>
+    <WindowsPackageType>None</WindowsPackageType>
   </PropertyGroup>
 
   <!-- Applied only when publishing a self-contained win-x64 folder build. -->

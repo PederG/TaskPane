@@ -313,6 +313,9 @@ public partial class ManagerViewModel : ObservableObject
     private string _quietEndLocal = "07:00";
 
     [ObservableProperty]
+    private int _defaultSnoozeMinutes = 15;
+
+    [ObservableProperty]
     private string _backupStatusText = "Backup status unknown.";
 
     [ObservableProperty]
@@ -367,6 +370,7 @@ public partial class ManagerViewModel : ObservableObject
         QuietHoursEnabled = reminderSettings.QuietHoursEnabled;
         QuietStartLocal = reminderSettings.QuietStartLocal;
         QuietEndLocal = reminderSettings.QuietEndLocal;
+        DefaultSnoozeMinutes = reminderSettings.DefaultSnoozeMinutes;
         var app = await _appSettings.GetAsync(cancellationToken).ConfigureAwait(true);
         AutostartEnabled = app.AutostartEnabled;
         ThemePreference = app.Theme;
@@ -1784,14 +1788,65 @@ public partial class ManagerViewModel : ObservableObject
             {
                 QuietHoursEnabled = QuietHoursEnabled,
                 QuietStartLocal = QuietStartLocal.Trim(),
-                QuietEndLocal = QuietEndLocal.Trim()
+                QuietEndLocal = QuietEndLocal.Trim(),
+                DefaultSnoozeMinutes = DefaultSnoozeMinutes
             }).ConfigureAwait(true);
-            StatusMessage = "Quiet hours saved.";
+            StatusMessage = "Reminder settings saved.";
         }
         catch (Exception ex)
         {
             StatusMessage = ex.Message;
         }
+    }
+
+    /// <summary>Opens the manager on the task referenced by a reminder notification.</summary>
+    public async Task OpenTaskFromReminderAsync(TaskId taskId, CancellationToken cancellationToken = default)
+    {
+        var task = await _taskService.GetAsync(taskId, cancellationToken).ConfigureAwait(true);
+        if (task is null || task.IsDeleted)
+        {
+            StatusMessage = "Reminder task was not found.";
+            return;
+        }
+
+        ShowingRecycleBin = false;
+        ShowingHistory = false;
+        ShowingReports = false;
+        IncludeSleeping = true;
+        IncludeCompleted = true;
+        OnlySleeping = false;
+        OnlyWaiting = false;
+        OnlyBlocked = false;
+        HideBlocked = false;
+        SearchText = string.Empty;
+        FilterProject = null;
+        FilterTag = null;
+        SelectedFocus = task.IsRoot ? task.FocusBucket : null;
+
+        if (task.IsRoot)
+        {
+            var section = task.FocusBucket switch
+            {
+                FocusBucket.Today => ManagerNavSection.Today,
+                FocusBucket.Next => ManagerNavSection.Next,
+                FocusBucket.Someday => ManagerNavSection.Someday,
+                _ => ManagerNavSection.Inbox
+            };
+            SyncNavSelection(section);
+            WorkspaceTitle = SelectedNavItem?.Title ?? "Tasks";
+        }
+        else
+        {
+            SyncNavSelection(ManagerNavSection.Inbox);
+            SelectedFocus = null;
+            WorkspaceTitle = "Tasks";
+        }
+
+        await RefreshAsync(cancellationToken).ConfigureAwait(true);
+        SelectedTask = Tasks.FirstOrDefault(t => t.Id.Equals(taskId));
+        StatusMessage = SelectedTask is null
+            ? "Opened manager for reminder."
+            : $"Opened reminder: {SelectedTask.Title}";
     }
 
     [RelayCommand]

@@ -565,24 +565,31 @@
                   <TextBlock Style="{StaticResource TpSectionLabel}" Text="REMINDERS" />
                   <TextBlock Text="{Binding ReminderSummary}" Margin="0,0,0,8" Opacity="0.75"
                              AutomationProperties.Name="Reminder summary" />
-                  <TextBlock Style="{StaticResource TpFieldLabel}" Text="Due local date/time" />
+                  <TextBlock Style="{StaticResource TpFieldLabel}" Text="Due local date/time (independent of deadline)" />
                   <ui:TextBox Text="{Binding ReminderDueLocal, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8" />
                   <ui:Button Content="Schedule reminder" Margin="0,0,0,16" Appearance="Secondary" HorizontalAlignment="Left"
                              Command="{Binding ScheduleReminderCommand}"
                              AutomationProperties.Name="Schedule reminder" />
-                  <TextBlock Style="{StaticResource TpSectionLabel}" Text="QUIET HOURS" />
-                  <ui:ToggleSwitch Content="Enabled" IsChecked="{Binding QuietHoursEnabled}" Margin="0,0,0,8" />
+                  <TextBlock Style="{StaticResource TpSectionLabel}" Text="QUIET HOURS &amp; SNOOZE" />
+                  <ui:ToggleSwitch Content="Quiet hours enabled" IsChecked="{Binding QuietHoursEnabled}" Margin="0,0,0,8" />
                   <DockPanel Margin="0,0,0,8">
                     <TextBlock DockPanel.Dock="Left" Text="Start" Width="40" VerticalAlignment="Center" />
-                    <ui:TextBox Text="{Binding QuietStartLocal, UpdateSourceTrigger=PropertyChanged}" />
+                    <ui:TextBox Text="{Binding QuietStartLocal, UpdateSourceTrigger=PropertyChanged}"
+                                AutomationProperties.Name="Quiet hours start" />
                   </DockPanel>
                   <DockPanel Margin="0,0,0,8">
                     <TextBlock DockPanel.Dock="Left" Text="End" Width="40" VerticalAlignment="Center" />
-                    <ui:TextBox Text="{Binding QuietEndLocal, UpdateSourceTrigger=PropertyChanged}" />
+                    <ui:TextBox Text="{Binding QuietEndLocal, UpdateSourceTrigger=PropertyChanged}"
+                                AutomationProperties.Name="Quiet hours end" />
                   </DockPanel>
-                  <ui:Button Content="Save quiet hours" Margin="0,0,0,16" Appearance="Secondary" HorizontalAlignment="Left"
+                  <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="Snooze minutes" Width="110" VerticalAlignment="Center" />
+                    <ui:TextBox Text="{Binding DefaultSnoozeMinutes, UpdateSourceTrigger=PropertyChanged}"
+                                AutomationProperties.Name="Default snooze minutes" />
+                  </DockPanel>
+                  <ui:Button Content="Save reminder settings" Margin="0,0,0,16" Appearance="Secondary" HorizontalAlignment="Left"
                              Command="{Binding SaveQuietHoursCommand}"
-                             AutomationProperties.Name="Save quiet hours" />
+                             AutomationProperties.Name="Save reminder settings" />
 
                   <TextBlock Style="{StaticResource TpSectionLabel}" Text="DEPENDENCIES" />
                   <TextBlock Text="{Binding BlockedSummary}" Margin="0,0,0,8"
