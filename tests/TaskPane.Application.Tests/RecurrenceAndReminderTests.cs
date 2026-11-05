@@ -244,7 +244,7 @@ public sealed class RecurrenceAndReminderTests
         var focus = new FocusService(tasks, tags, deps);
         var time = new TimeTrackingService(
             sessions, tasks, settings, uow, clock, NullLogger<TimeTrackingService>.Instance);
-        var history = new HistoryService(audit, tasks, uow, NullLogger<HistoryService>.Instance);
+        var history = new HistoryService(audit, tasks, deps, tags, uow, NullLogger<HistoryService>.Instance);
         var recurrence = new RecurrenceService(
             templates, tasks, uow, clock, NullLogger<RecurrenceService>.Instance);
         var reminderService = new ReminderService(

@@ -125,6 +125,9 @@ public sealed class TaskService
             }
         }
 
+        var currentTags = await _tags.GetTagIdsForTaskAsync(task.Id, cancellationToken).ConfigureAwait(false);
+        var before = HistoryService.TaskSnapshot.From(task, currentTags);
+
         task.Title = title;
         task.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
         task.Priority = request.Priority;
@@ -140,6 +143,9 @@ public sealed class TaskService
         task.UpdatedUtc = DateTimeOffset.UtcNow;
         task.Revision++;
 
+        var nextTags = request.TagIds ?? currentTags;
+        var after = HistoryService.TaskSnapshot.From(task, nextTags);
+
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
             await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
@@ -147,6 +153,8 @@ public sealed class TaskService
             {
                 await _tags.SetTaskTagsAsync(task.Id, request.TagIds, ct).ConfigureAwait(false);
             }
+
+            await _history.RecordUpdatedAsync(before, after, ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
         return task;
@@ -222,14 +230,18 @@ public sealed class TaskService
         CancellationToken cancellationToken = default)
     {
         var task = await RequireAsync(id, cancellationToken).ConfigureAwait(false);
+        var tags = await _tags.GetTagIdsForTaskAsync(task.Id, cancellationToken).ConfigureAwait(false);
+        var before = HistoryService.TaskSnapshot.From(task, tags);
         task.WaitingFor = string.IsNullOrWhiteSpace(waitingFor) ? null : waitingFor.Trim();
         task.WaitingFollowUpUtc = task.WaitingFor is null ? null : followUpUtc;
         task.UpdatedUtc = DateTimeOffset.UtcNow;
         task.Revision++;
+        var after = HistoryService.TaskSnapshot.From(task, tags);
 
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
             await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
+            await _history.RecordUpdatedAsync(before, after, ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
 
@@ -242,15 +254,19 @@ public sealed class TaskService
     {
         DeadlineValidator.Validate(localDate, localTime);
         var task = await RequireAsync(id, cancellationToken).ConfigureAwait(false);
+        var tags = await _tags.GetTagIdsForTaskAsync(task.Id, cancellationToken).ConfigureAwait(false);
+        var before = HistoryService.TaskSnapshot.From(task, tags);
         task.DeadlineLocalDate = DeadlineValidator.NormalizeDate(localDate);
         task.DeadlineLocalTime = DeadlineValidator.NormalizeTime(localTime);
         task.DeadlineTimeZoneId = string.IsNullOrWhiteSpace(timeZoneId) ? null : timeZoneId.Trim();
         task.UpdatedUtc = DateTimeOffset.UtcNow;
         task.Revision++;
+        var after = HistoryService.TaskSnapshot.From(task, tags);
 
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
             await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
+            await _history.RecordUpdatedAsync(before, after, ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
 
@@ -361,7 +377,7 @@ public sealed class TaskService
         }
 
         var ids = toDelete.Select(t => t.Id).ToList();
-        var snapshots = toDelete.Select(HistoryService.TaskSnapshot.From).ToList();
+        var snapshots = toDelete.Select(t => HistoryService.TaskSnapshot.From(t)).ToList();
 
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
@@ -528,13 +544,17 @@ public sealed class TaskService
         CancellationToken cancellationToken = default)
     {
         var task = await RequireAsync(id, cancellationToken).ConfigureAwait(false);
+        var tags = await _tags.GetTagIdsForTaskAsync(task.Id, cancellationToken).ConfigureAwait(false);
+        var before = HistoryService.TaskSnapshot.From(task, tags);
         task.FocusBucket = focus;
         task.UpdatedUtc = DateTimeOffset.UtcNow;
         task.Revision++;
+        var after = HistoryService.TaskSnapshot.From(task, tags);
 
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
             await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
+            await _history.RecordUpdatedAsync(before, after, ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
 

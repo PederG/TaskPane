@@ -292,7 +292,7 @@ public sealed class TimeTrackingServiceTests
             uow,
             clock,
             NullLogger<TimeTrackingService>.Instance);
-        var history = new HistoryService(audit, tasks, uow, NullLogger<HistoryService>.Instance);
+        var history = new HistoryService(audit, tasks, deps, tags, uow, NullLogger<HistoryService>.Instance);
         var recurrence = new RecurrenceService(
             new InMemoryRecurrenceTemplateRepository(),
             tasks,

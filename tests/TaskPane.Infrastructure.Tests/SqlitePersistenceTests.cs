@@ -398,6 +398,96 @@ public sealed class SqlitePersistenceTests
     }
 
     [Fact]
+    public async Task Expanded_field_and_dependency_undo_survives_restart()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "TaskPaneTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var dbPath = Path.Combine(root, "tasks.db");
+        TaskId taskId;
+        TaskId blockerId;
+        TaskId dependentId;
+
+        try
+        {
+            await using (var services = Build(dbPath))
+            {
+                await services.GetRequiredService<SqliteMigrator>().MigrateAsync();
+                var tasks = services.GetRequiredService<TaskService>();
+                var org = services.GetRequiredService<OrganizationService>();
+                var deps = services.GetRequiredService<DependencyService>();
+                var history = services.GetRequiredService<HistoryService>();
+
+                var project = await org.CreateProjectAsync("RestartProj");
+                var tag = await org.CreateTagAsync("restart-tag");
+                var created = await tasks.CreateAsync(new CreateTaskRequest
+                {
+                    Title = "Before",
+                    Notes = "old",
+                    Priority = TaskPriority.Low,
+                    FocusBucket = FocusBucket.Inbox
+                });
+                taskId = created.Id;
+
+                await tasks.UpdateAsync(new UpdateTaskRequest
+                {
+                    Id = taskId,
+                    Title = "After",
+                    Notes = "new notes",
+                    Priority = TaskPriority.High,
+                    FocusBucket = FocusBucket.Today,
+                    DeadlineLocalDate = "2026-12-25",
+                    DeadlineLocalTime = "14:00",
+                    ProjectId = project.Id,
+                    TagIds = [tag.Id]
+                });
+
+                var blocker = await tasks.CreateAsync(new CreateTaskRequest { Title = "BlockerR" });
+                var dependent = await tasks.CreateAsync(new CreateTaskRequest { Title = "DependentR" });
+                blockerId = blocker.Id;
+                dependentId = dependent.Id;
+                await deps.AddRequiredAsync(blockerId, dependentId);
+
+                Assert.True((await history.EvaluateUndoAsync((await history.PeekUndoAsync())!.Id)).CanUndo);
+            }
+
+            await using (var services = Build(dbPath))
+            {
+                await services.GetRequiredService<SqliteMigrator>().MigrateAsync();
+                var tasks = services.GetRequiredService<TaskService>();
+                var deps = services.GetRequiredService<DependencyService>();
+                var history = services.GetRequiredService<HistoryService>();
+                var tags = services.GetRequiredService<TaskPane.Core.Interfaces.ITagRepository>();
+
+                // Undo dependency add first (latest), then the field update.
+                await history.UndoLatestAsync();
+                Assert.False((await deps.GetBlockedStateAsync(dependentId)).IsBlocked);
+
+                await history.UndoLatestAsync();
+                var restored = await tasks.GetAsync(taskId);
+                Assert.Equal("Before", restored!.Title);
+                Assert.Equal("old", restored.Notes);
+                Assert.Equal(TaskPriority.Low, restored.Priority);
+                Assert.Equal(FocusBucket.Inbox, restored.FocusBucket);
+                Assert.Null(restored.DeadlineLocalDate);
+                Assert.Null(restored.ProjectId);
+                Assert.Empty(await tags.GetTagIdsForTaskAsync(taskId));
+
+                var events = await history.ListRecentAsync();
+                Assert.Contains(events, e => e.Action == Core.Enums.AuditAction.Updated && e.IsUndone);
+                Assert.Contains(events, e => e.Action == Core.Enums.AuditAction.DependencyAdded && e.IsUndone);
+
+                var repeatId = events.First(e => e.Action == Core.Enums.AuditAction.Updated && e.IsUndone).Id;
+                var repeat = await Assert.ThrowsAsync<Core.Errors.BusinessException>(() => history.UndoAsync(repeatId));
+                Assert.Equal(Core.Errors.ValidationCodes.UndoAlreadyApplied, repeat.Code);
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
     public async Task Phase5_recurrence_and_reminders_persist_with_dedupe()
     {
         var root = Path.Combine(Path.GetTempPath(), "TaskPaneTests", Guid.NewGuid().ToString("N"));

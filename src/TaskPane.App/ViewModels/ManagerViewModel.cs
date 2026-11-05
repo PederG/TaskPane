@@ -429,7 +429,8 @@ public partial class ManagerViewModel : ObservableObject
         var events = await _history.ListRecentAsync(80, cancellationToken).ConfigureAwait(true);
         foreach (var item in events)
         {
-            HistoryRows.Add(new HistoryRowViewModel(item));
+            var evaluation = await _history.EvaluateUndoAsync(item.Id, cancellationToken).ConfigureAwait(true);
+            HistoryRows.Add(new HistoryRowViewModel(item, evaluation));
         }
     }
 
@@ -1350,6 +1351,7 @@ public partial class ManagerViewModel : ObservableObject
     {
         if (row is null || row.IsUndone || !row.IsUndoable)
         {
+            StatusMessage = row?.CannotUndoReason ?? "That history entry cannot be undone.";
             return;
         }
 
@@ -1358,10 +1360,16 @@ public partial class ManagerViewModel : ObservableObject
             await _history.UndoAsync(row.Id).ConfigureAwait(true);
             StatusMessage = $"Undid {row.Action}.";
             await RefreshAsync().ConfigureAwait(true);
+            if (SelectedTask is not null)
+            {
+                await LoadDependenciesAsync(SelectedTask.Id).ConfigureAwait(true);
+                await LoadSessionsAsync(SelectedTask.Id).ConfigureAwait(true);
+            }
         }
         catch (Core.Errors.BusinessException ex)
         {
             StatusMessage = ex.Message;
+            await RefreshHistoryAsync(CancellationToken.None).ConfigureAwait(true);
         }
     }
 
