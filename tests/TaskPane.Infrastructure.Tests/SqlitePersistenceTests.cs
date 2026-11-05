@@ -173,6 +173,67 @@ public sealed class SqlitePersistenceTests
     }
 
     [Fact]
+    public async Task Overlay_notes_create_and_edit_persist_across_restart()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "TaskPaneTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var dbPath = Path.Combine(root, "tasks.db");
+        TaskId taskId;
+
+        try
+        {
+            await using (var host1 = Build(dbPath))
+            {
+                await host1.GetRequiredService<SqliteMigrator>().MigrateAsync();
+                var tasks = host1.GetRequiredService<TaskService>();
+                var created = await tasks.CreateAsync(new CreateTaskRequest
+                {
+                    Title = "Notes only via overlay",
+                    FocusBucket = FocusBucket.Inbox
+                });
+                taskId = created.Id;
+                Assert.Null(created.Notes);
+
+                await tasks.UpdateAsync(new UpdateTaskRequest
+                {
+                    Id = taskId,
+                    Title = created.Title,
+                    Notes = "created\nfrom overlay",
+                    Priority = created.Priority,
+                    FocusBucket = created.FocusBucket
+                });
+            }
+
+            await using (var host2 = Build(dbPath))
+            {
+                await host2.GetRequiredService<SqliteMigrator>().MigrateAsync();
+                var tasks = host2.GetRequiredService<TaskService>();
+                var loaded = await tasks.GetAsync(taskId);
+                Assert.NotNull(loaded);
+                Assert.Equal("created\nfrom overlay", loaded!.Notes);
+
+                await tasks.UpdateAsync(new UpdateTaskRequest
+                {
+                    Id = taskId,
+                    Title = loaded.Title,
+                    Notes = "edited later",
+                    Priority = loaded.Priority,
+                    FocusBucket = loaded.FocusBucket
+                });
+            }
+
+            await using var host3 = Build(dbPath);
+            await host3.GetRequiredService<SqliteMigrator>().MigrateAsync();
+            var again = await host3.GetRequiredService<TaskService>().GetAsync(taskId);
+            Assert.Equal("edited later", again!.Notes);
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
     public async Task Custom_sleep_survives_restart_then_auto_wakes_after_expiry()
     {
         var root = Path.Combine(Path.GetTempPath(), "TaskPaneTests", Guid.NewGuid().ToString("N"));

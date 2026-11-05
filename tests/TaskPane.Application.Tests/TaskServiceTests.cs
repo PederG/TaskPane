@@ -196,6 +196,54 @@ public sealed class TaskServiceTests
     }
 
     [Fact]
+    public async Task Overlay_notes_create_edit_and_clear_via_UpdateAsync()
+    {
+        var sut = CreateSut(out var repo);
+        var task = await sut.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Capture notes later",
+            FocusBucket = FocusBucket.Inbox,
+            Priority = TaskPriority.Normal
+        });
+        Assert.Null(task.Notes);
+
+        // Create (no manager): multiline Markdown/plain text.
+        var created = await sut.UpdateAsync(new UpdateTaskRequest
+        {
+            Id = task.Id,
+            Title = task.Title,
+            Notes = "Line one\n## Heading\n- item",
+            Priority = task.Priority,
+            FocusBucket = task.FocusBucket
+        });
+        Assert.Equal("Line one\n## Heading\n- item", created.Notes);
+        Assert.Equal("Line one\n## Heading\n- item", repo.Items.Single(t => t.Id.Equals(task.Id)).Notes);
+
+        // Edit in place.
+        var edited = await sut.UpdateAsync(new UpdateTaskRequest
+        {
+            Id = task.Id,
+            Title = task.Title,
+            Notes = "Revised body",
+            Priority = task.Priority,
+            FocusBucket = task.FocusBucket
+        });
+        Assert.Equal("Revised body", edited.Notes);
+
+        // Blank save clears notes (Cancel is client-side; persist path nulls whitespace).
+        var cleared = await sut.UpdateAsync(new UpdateTaskRequest
+        {
+            Id = task.Id,
+            Title = task.Title,
+            Notes = "   ",
+            Priority = task.Priority,
+            FocusBucket = task.FocusBucket
+        });
+        Assert.Null(cleared.Notes);
+        Assert.Null(repo.Items.Single(t => t.Id.Equals(task.Id)).Notes);
+    }
+
+    [Fact]
     public async Task Custom_sleep_hides_until_expiry_then_auto_wakes_without_clearing_fields()
     {
         var sut = CreateSut(out var repo);
