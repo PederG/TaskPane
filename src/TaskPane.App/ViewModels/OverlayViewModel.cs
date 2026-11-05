@@ -7,6 +7,7 @@ using TaskPane.Core.Branding;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 using TaskPane.Core.Ids;
+using TaskPane.Core.Notes;
 using TaskPane.Core.Time;
 using TaskPane.Core.Validation;
 
@@ -19,9 +20,11 @@ public partial class OverlayViewModel : ObservableObject
     private readonly AppSettingsService _appSettings;
     private readonly TimeTrackingService _timeTracking;
     private readonly DependencyService _dependencies;
+    private readonly NotesDraftCache _noteDrafts = new();
     private readonly HashSet<TaskId> _expanded = [];
     private DateTimeOffset? _activeStartedUtc;
     private TaskId? _activeTaskId;
+    private TaskId? _noteTaskId;
 
     public OverlayViewModel(
         TaskService taskService,
@@ -66,6 +69,15 @@ public partial class OverlayViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _notePopoverOpen;
+
+    [ObservableProperty]
+    private bool _isNoteEditing;
+
+    [ObservableProperty]
+    private string _noteDraftText = string.Empty;
+
+    [ObservableProperty]
+    private string _noteCompactBody = string.Empty;
 
     [ObservableProperty]
     private bool _showSleeping;
@@ -272,6 +284,8 @@ public partial class OverlayViewModel : ObservableObject
             ActiveTaskTitle = string.Empty;
             ActiveElapsedText = string.Empty;
         }
+
+        RebindOpenNotesTarget();
     }
 
     /// <summary>Updates the active-card elapsed clock without a full list refresh.</summary>
@@ -528,22 +542,165 @@ public partial class OverlayViewModel : ObservableObject
     [RelayCommand]
     private void ShowNotes(TaskRowViewModel? row)
     {
-        if (row is null || !row.HasNotes)
+        if (row is null)
         {
-            NotePopoverOpen = false;
-            NotePreviewTask = null;
             return;
         }
 
-        NotePreviewTask = row;
-        NotePopoverOpen = true;
+        StashCurrentNoteDraft();
+        OpenNotesFor(row, beginEditing: !row.HasNotes);
+    }
+
+    [RelayCommand]
+    private void BeginEditNotes()
+    {
+        if (!NotePopoverOpen || NotePreviewTask is null || _noteTaskId is null)
+        {
+            return;
+        }
+
+        IsNoteEditing = true;
+        NoteDraftText = _noteDrafts.OpenOrRestore(_noteTaskId.Value, NotePreviewTask.Notes);
+        _noteDrafts.SetDraft(_noteTaskId.Value, NoteDraftText);
+    }
+
+    [RelayCommand]
+    private async Task SaveNotesAsync()
+    {
+        if (NotePreviewTask is null || _noteTaskId is null)
+        {
+            return;
+        }
+
+        var row = NotePreviewTask;
+        var notes = NotesDraftCache.NormalizeForPersist(NoteDraftText);
+        await _taskService.UpdateAsync(new UpdateTaskRequest
+        {
+            Id = row.Id,
+            Title = row.Title,
+            Notes = notes,
+            Priority = row.Priority,
+            FocusBucket = row.FocusBucket,
+            DeadlineLocalDate = row.DeadlineLocalDate,
+            DeadlineLocalTime = row.DeadlineLocalTime,
+            WaitingFor = row.WaitingFor,
+            WaitingFollowUpUtc = row.WaitingFollowUpUtc,
+            ProjectId = row.ProjectId
+        }).ConfigureAwait(true);
+
+        _noteDrafts.Clear(row.Id);
+        IsNoteEditing = false;
+        StatusMessage = notes is null ? "Notes cleared." : "Notes saved.";
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private void CancelNotesEdit()
+    {
+        if (_noteTaskId is null)
+        {
+            IsNoteEditing = false;
+            return;
+        }
+
+        _noteDrafts.Clear(_noteTaskId.Value);
+        NoteDraftText = NotePreviewTask?.Notes ?? string.Empty;
+        IsNoteEditing = false;
+        UpdateNoteCompactBody(NotePreviewTask?.Notes);
     }
 
     [RelayCommand]
     private void CloseNotes()
     {
+        StashCurrentNoteDraft();
         NotePopoverOpen = false;
+        IsNoteEditing = false;
         NotePreviewTask = null;
+        _noteTaskId = null;
+        NoteDraftText = string.Empty;
+        NoteCompactBody = string.Empty;
+    }
+
+    partial void OnNoteDraftTextChanged(string value)
+    {
+        if (_noteTaskId is null || !IsNoteEditing)
+        {
+            return;
+        }
+
+        _noteDrafts.SetDraft(_noteTaskId.Value, value);
+    }
+
+    private void OpenNotesFor(TaskRowViewModel row, bool beginEditing)
+    {
+        _noteTaskId = row.Id;
+        NotePreviewTask = row;
+        NoteDraftText = _noteDrafts.OpenOrRestore(row.Id, row.Notes);
+        UpdateNoteCompactBody(
+            _noteDrafts.TryGetDraft(row.Id, out var draft) ? draft : row.Notes);
+        IsNoteEditing = beginEditing || _noteDrafts.IsDirty(row.Id, row.Notes);
+        if (IsNoteEditing)
+        {
+            _noteDrafts.SetDraft(row.Id, NoteDraftText);
+        }
+
+        NotePopoverOpen = true;
+    }
+
+    private void StashCurrentNoteDraft()
+    {
+        if (_noteTaskId is null || !IsNoteEditing)
+        {
+            return;
+        }
+
+        _noteDrafts.SetDraft(_noteTaskId.Value, NoteDraftText);
+    }
+
+    private void RebindOpenNotesTarget()
+    {
+        if (!NotePopoverOpen || _noteTaskId is null)
+        {
+            return;
+        }
+
+        var id = _noteTaskId.Value;
+        var row = VisibleTasks.FirstOrDefault(t => t.Id.Equals(id))
+            ?? SleepingTasks.FirstOrDefault(t => t.Id.Equals(id));
+        if (row is null)
+        {
+            // Task left the overlay (completed/deleted/focus change) — keep draft, close UI.
+            StashCurrentNoteDraft();
+            NotePopoverOpen = false;
+            IsNoteEditing = false;
+            NotePreviewTask = null;
+            _noteTaskId = null;
+            return;
+        }
+
+        var wasEditing = IsNoteEditing;
+        NotePreviewTask = row;
+        if (wasEditing)
+        {
+            NoteDraftText = _noteDrafts.OpenOrRestore(id, row.Notes);
+        }
+        else
+        {
+            NoteDraftText = row.Notes ?? string.Empty;
+            UpdateNoteCompactBody(
+                _noteDrafts.TryGetDraft(id, out var draft) ? draft : row.Notes);
+        }
+    }
+
+    private void UpdateNoteCompactBody(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes))
+        {
+            NoteCompactBody = "No notes yet — Edit to add Markdown or plain text.";
+            return;
+        }
+
+        NoteCompactBody = notes;
     }
 
     private static bool CanAddSubtask(TaskRowViewModel? row)
