@@ -447,7 +447,18 @@
         </ListBox.ItemContainerStyle>
         <ListBox.ItemTemplate>
           <DataTemplate>
+            <!-- Subtasks indent the whole row (checkbox + title) for hierarchy. -->
             <Grid MinHeight="28">
+              <Grid.Style>
+                <Style TargetType="Grid">
+                  <Setter Property="Margin" Value="0" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsSubtask}" Value="True">
+                      <Setter Property="Margin" Value="16,0,0,0" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Grid.Style>
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="28" />
                 <ColumnDefinition Width="*" />
@@ -493,31 +504,58 @@
                 </Grid>
               </Button>
 
-              <TextBlock Grid.Column="1"
-                         Text="{Binding Title}"
-                         Margin="4,0,8,0"
-                         Cursor="Hand"
-                         MouseLeftButtonUp="TaskTitle_OnMouseLeftButtonUp"
-                         ToolTip="{Binding MetaText}">
-                <TextBlock.Style>
-                  <Style TargetType="TextBlock" BasedOn="{StaticResource TpOverlayTaskTitle}">
-                    <Setter Property="Margin" Value="4,0,8,0" />
-                    <Style.Triggers>
-                      <DataTrigger Binding="{Binding IsSubtask}" Value="True">
-                        <Setter Property="Margin" Value="16,0,8,0" />
-                        <Setter Property="Foreground" Value="{StaticResource TpOverlayMutedBrush}" />
-                      </DataTrigger>
-                      <DataTrigger Binding="{Binding IsOverdue}" Value="True">
-                        <Setter Property="Foreground" Value="{StaticResource TpOverlayDangerBrush}" />
-                        <Setter Property="FontWeight" Value="SemiBold" />
-                      </DataTrigger>
-                      <DataTrigger Binding="{Binding IsBlocked}" Value="True">
-                        <Setter Property="Foreground" Value="{StaticResource TpOverlayCautionBrush}" />
-                      </DataTrigger>
-                    </Style.Triggers>
-                  </Style>
-                </TextBlock.Style>
-              </TextBlock>
+              <Grid Grid.Column="1" Margin="4,0,8,0">
+                <TextBlock Text="{Binding Title}"
+                           Cursor="Hand"
+                           MouseLeftButtonUp="TaskTitle_OnMouseLeftButtonUp"
+                           ToolTip="{Binding MetaText}">
+                  <TextBlock.Style>
+                    <Style TargetType="TextBlock" BasedOn="{StaticResource TpOverlayTaskTitle}">
+                      <Setter Property="Visibility" Value="Visible" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsEditing}" Value="True">
+                          <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsSubtask}" Value="True">
+                          <Setter Property="Foreground" Value="{StaticResource TpOverlayMutedBrush}" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsOverdue}" Value="True">
+                          <Setter Property="Foreground" Value="{StaticResource TpOverlayDangerBrush}" />
+                          <Setter Property="FontWeight" Value="SemiBold" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsBlocked}" Value="True">
+                          <Setter Property="Foreground" Value="{StaticResource TpOverlayCautionBrush}" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </TextBlock.Style>
+                </TextBlock>
+                <TextBox Text="{Binding DraftTitle, UpdateSourceTrigger=PropertyChanged}"
+                         Background="Transparent"
+                         Foreground="{StaticResource TpOverlayTextBrush}"
+                         CaretBrush="{StaticResource TpOverlayTextBrush}"
+                         BorderThickness="0,0,0,1"
+                         BorderBrush="{StaticResource TpOverlayBorderBrush}"
+                         Padding="0,1"
+                         FontSize="13"
+                         VerticalAlignment="Center"
+                         VerticalContentAlignment="Center"
+                         AutomationProperties.Name="Edit task title"
+                         IsVisibleChanged="TitleEditBox_OnIsVisibleChanged"
+                         LostFocus="TitleEditBox_OnLostFocus"
+                         PreviewKeyDown="TitleEditBox_OnPreviewKeyDown">
+                  <TextBox.Style>
+                    <Style TargetType="TextBox">
+                      <Setter Property="Visibility" Value="Collapsed" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsEditing}" Value="True">
+                          <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </TextBox.Style>
+                </TextBox>
+              </Grid>
 
               <!-- Play / active pulse (elapsed lives on the active card only) -->
               <Button Grid.Column="2"
@@ -566,7 +604,18 @@
                     <MenuItem Header="Sleep 1 hour"
                               Click="TaskMenuSleep_OnClick" />
                     <MenuItem Header="Add subtask"
-                              Click="TaskMenuAddSubtask_OnClick" />
+                              Click="TaskMenuAddSubtask_OnClick">
+                      <MenuItem.Style>
+                        <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                          <Setter Property="IsEnabled" Value="True" />
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSubtask}" Value="True">
+                              <Setter Property="IsEnabled" Value="False" />
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </MenuItem.Style>
+                    </MenuItem>
                     <MenuItem Header="Expand / collapse"
                               Click="TaskMenuExpand_OnClick" />
                     <MenuItem Header="Notes"

@@ -42,6 +42,44 @@ public sealed class TaskServiceTests
     }
 
     [Fact]
+    public async Task Create_subtask_placeholder_then_rename_keeps_one_level()
+    {
+        var sut = CreateSut(out _);
+        var parent = await sut.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Parent",
+            FocusBucket = FocusBucket.Today
+        });
+        var child = await sut.CreateAsync(new CreateTaskRequest
+        {
+            Title = TaskPane.Core.Validation.SubtaskUiPolicy.NewSubtaskPlaceholderTitle,
+            ParentTaskId = parent.Id
+        });
+
+        Assert.Equal(parent.Id, child.ParentTaskId);
+        Assert.Equal(FocusBucket.Today, child.FocusBucket);
+
+        var renamed = await sut.UpdateAsync(new UpdateTaskRequest
+        {
+            Id = child.Id,
+            Title = "Prepare migration script",
+            Priority = child.Priority,
+            FocusBucket = child.FocusBucket
+        });
+
+        Assert.Equal("Prepare migration script", renamed.Title);
+        Assert.Equal(parent.Id, renamed.ParentTaskId);
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            sut.CreateAsync(new CreateTaskRequest
+            {
+                Title = "Too deep",
+                ParentTaskId = renamed.Id
+            }));
+        Assert.Equal(ValidationCodes.ParentIsChild, ex.Code);
+    }
+
+    [Fact]
     public async Task Soft_delete_parent_cascades_and_restore_works()
     {
         var sut = CreateSut(out var repo);

@@ -8,6 +8,7 @@ using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 using TaskPane.Core.Ids;
 using TaskPane.Core.Time;
+using TaskPane.Core.Validation;
 
 namespace TaskPane.App.ViewModels;
 
@@ -485,23 +486,71 @@ public partial class OverlayViewModel : ObservableObject
         NotePreviewTask = null;
     }
 
-    [RelayCommand]
+    private static bool CanAddSubtask(TaskRowViewModel? row)
+        => row is not null && SubtaskUiPolicy.CanOfferAddSubtask(row.IsSubtask);
+
+    [RelayCommand(CanExecute = nameof(CanAddSubtask))]
     private async Task AddSubtaskAsync(TaskRowViewModel? row)
     {
-        if (row is null || row.IsSubtask)
+        if (!CanAddSubtask(row))
         {
             return;
         }
 
-        await _taskService.CreateAsync(new CreateTaskRequest
+        var created = await _taskService.CreateAsync(new CreateTaskRequest
         {
-            Title = "New subtask",
-            ParentTaskId = row.Id
+            Title = SubtaskUiPolicy.NewSubtaskPlaceholderTitle,
+            ParentTaskId = row!.Id
         }).ConfigureAwait(true);
 
         _expanded.Add(row.Id);
         await RefreshAsync().ConfigureAwait(true);
+
+        var child = VisibleTasks.FirstOrDefault(t => t.Id.Equals(created.Id));
+        child?.BeginInlineEdit();
     }
+
+    [RelayCommand]
+    private async Task CommitInlineEditAsync(TaskRowViewModel? row)
+    {
+        if (row is null || !row.IsEditing)
+        {
+            return;
+        }
+
+        var title = row.DraftTitle.Trim();
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            row.CancelInlineEdit();
+            return;
+        }
+
+        if (!string.Equals(title, row.Title, StringComparison.Ordinal))
+        {
+            await _taskService.UpdateAsync(new UpdateTaskRequest
+            {
+                Id = row.Id,
+                Title = title,
+                Notes = row.Notes,
+                Priority = row.Priority,
+                FocusBucket = row.FocusBucket,
+                DeadlineLocalDate = row.DeadlineLocalDate,
+                DeadlineLocalTime = row.DeadlineLocalTime,
+                WaitingFor = row.WaitingFor,
+                WaitingFollowUpUtc = row.WaitingFollowUpUtc,
+                ProjectId = row.ProjectId
+            }).ConfigureAwait(true);
+        }
+
+        row.ApplyCommittedTitle(title);
+        if (ActiveTaskRow?.Id.Equals(row.Id) == true)
+        {
+            ActiveTaskTitle = title;
+        }
+    }
+
+    [RelayCommand]
+    private void CancelInlineEdit(TaskRowViewModel? row) => row?.CancelInlineEdit();
 
     [RelayCommand]
     private void OpenManager() => OpenManagerRequested?.Invoke();

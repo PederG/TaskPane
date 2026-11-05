@@ -577,9 +577,68 @@ public partial class OverlayWindow : Window
     {
         if (sender is FrameworkElement { DataContext: TaskRowViewModel row })
         {
+            if (row.IsEditing)
+            {
+                return;
+            }
+
             if (_viewModel.ShowNotesCommand.CanExecute(row))
             {
                 _viewModel.ShowNotesCommand.Execute(row);
+            }
+
+            e.Handled = true;
+        }
+    }
+
+    private void TitleEditBox_OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.TextBox box || box.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (box.IsVisible)
+            {
+                box.Focus();
+                Keyboard.Focus(box);
+                box.SelectAll();
+            }
+        }, DispatcherPriority.Input);
+    }
+
+    private void TitleEditBox_OnLostFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: TaskRowViewModel row }
+            && _viewModel.CommitInlineEditCommand.CanExecute(row))
+        {
+            _viewModel.CommitInlineEditCommand.Execute(row);
+        }
+    }
+
+    private void TitleEditBox_OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: TaskRowViewModel row })
+        {
+            return;
+        }
+
+        if (e.Key == Key.Enter)
+        {
+            if (_viewModel.CommitInlineEditCommand.CanExecute(row))
+            {
+                _viewModel.CommitInlineEditCommand.Execute(row);
+            }
+
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            if (_viewModel.CancelInlineEditCommand.CanExecute(row))
+            {
+                _viewModel.CancelInlineEditCommand.Execute(row);
             }
 
             e.Handled = true;
