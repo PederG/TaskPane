@@ -31,6 +31,14 @@
     RootSurface only. No visible ResizeGrip — edge/corner resize via WM_NCHITTEST.
     Style={x:Null} opts out of WPF-UI's implicit Window style (opaque WindowBackground /
     ClientAreaBorder template) so the compact overlay keeps a transparent rectangular HWND.
+    ResizeMode stays CanResize; DWMWA_BORDER_COLOR=COLOR_NONE hides the native DWM outline.
+    SetWindowRgn (CreateRoundRectRgn from RootSurface PointToScreen vs GetWindowRect; 1px
+    left/top inset) clips white host outside the 18 DIP rounded RootSurface. PointToScreen
+    is not re-scaled by DPI. CreateRoundRectRgn is binary/jagged — region expand would
+    re-expose white host, so layered per-pixel alpha is preferred for silhouette AA; region
+    stays the white-host fallback. WM_NCHITTEST: top-left/right corners resize; top-center
+    ≈ TpOverlayPad (14 DIP) is HTCAPTION for empty padding drag (not over Search/Expand/More;
+    respects position-locked). DragHeader still DragMove for the header row.
   -->
   <Window.Template>
     <ControlTemplate TargetType="Window">
