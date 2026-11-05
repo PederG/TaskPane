@@ -226,16 +226,76 @@ public partial class ManagerViewModel : ObservableObject
     private int _recurrenceInterval = 1;
 
     [ObservableProperty]
-    private string _recurrenceWeekdays = "1,2,3,4,5";
+    private string _recurrenceIntervalLabel = "Every N days";
+
+    [ObservableProperty]
+    private bool _weekdaySunday;
+
+    [ObservableProperty]
+    private bool _weekdayMonday = true;
+
+    [ObservableProperty]
+    private bool _weekdayTuesday = true;
+
+    [ObservableProperty]
+    private bool _weekdayWednesday = true;
+
+    [ObservableProperty]
+    private bool _weekdayThursday = true;
+
+    [ObservableProperty]
+    private bool _weekdayFriday = true;
+
+    [ObservableProperty]
+    private bool _weekdaySaturday;
+
+    [ObservableProperty]
+    private bool _showWeekdayPicker;
+
+    [ObservableProperty]
+    private MonthlyRecurrenceMode _monthlyRecurrenceMode = MonthlyRecurrenceMode.DayOfMonth;
+
+    [ObservableProperty]
+    private bool _showMonthlyOptions;
+
+    [ObservableProperty]
+    private bool _showDayOfMonthPicker = true;
+
+    [ObservableProperty]
+    private bool _showNthWeekdayPicker;
 
     [ObservableProperty]
     private int _recurrenceDayOfMonth = 1;
 
     [ObservableProperty]
-    private string _recurrenceAnchorDate = string.Empty;
+    private int _recurrenceWeekOfMonth = 1;
 
     [ObservableProperty]
-    private string _recurrenceSummary = string.Empty;
+    private DayOfWeek _recurrenceWeekdayOfMonth = DayOfWeek.Monday;
+
+    [ObservableProperty]
+    private DateTime? _recurrenceAnchorDateValue = DateTime.Today;
+
+    [ObservableProperty]
+    private string _recurrenceLocalTime = string.Empty;
+
+    [ObservableProperty]
+    private string _recurrenceSummary = "No recurrence";
+
+    [ObservableProperty]
+    private string _recurrenceDraftSummary = string.Empty;
+
+    [ObservableProperty]
+    private string _recurrenceValidationMessage = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasAttachedRecurrence;
+
+    [ObservableProperty]
+    private bool _recurrenceTemplateEnabled;
+
+    [ObservableProperty]
+    private RecurrenceTemplateId? _attachedRecurrenceTemplateId;
 
     [ObservableProperty]
     private string _reminderDueLocal = string.Empty;
@@ -754,10 +814,9 @@ public partial class ManagerViewModel : ObservableObject
         SelectedSleepSummary = value.IsSleeping
             ? (string.IsNullOrWhiteSpace(value.SleepWakeText) ? "Sleeping" : value.SleepWakeText)
             : "Not sleeping";
-        RecurrenceAnchorDate = string.IsNullOrWhiteSpace(RecurrenceAnchorDate)
-            ? DateTime.Now.ToString("yyyy-MM-dd")
-            : RecurrenceAnchorDate;
+        RecurrenceAnchorDateValue ??= DateTime.Today;
         ReminderDueLocal = DateTime.Now.AddHours(1).ToString("yyyy-MM-dd HH:mm");
+        RefreshRecurrenceUiState();
         _ = LoadSelectedTagsAsync(value.Id);
         _ = LoadSessionsAsync(value.Id);
         _ = LoadDependenciesAsync(value.Id);
@@ -771,14 +830,32 @@ public partial class ManagerViewModel : ObservableObject
         {
             var template = await _recurrence.GetTemplateAsync(templateId).ConfigureAwait(true);
             var rule = template is null ? null : _recurrence.ParseRule(template);
-            RecurrenceSummary = rule is null
-                ? $"Occurrence {task.OccurrenceKey}"
-                : $"{rule.Frequency} every {rule.Interval} · key {task.OccurrenceKey}";
+            AttachedRecurrenceTemplateId = templateId;
+            HasAttachedRecurrence = true;
+            RecurrenceTemplateEnabled = template?.IsEnabled ?? false;
+            if (rule is not null)
+            {
+                ApplyRuleToEditor(rule);
+                RecurrenceSummary = RecurrenceRuleFormatter.Summarize(rule)
+                    + (string.IsNullOrWhiteSpace(task.OccurrenceKey) ? string.Empty : $" · key {task.OccurrenceKey}")
+                    + (RecurrenceTemplateEnabled ? string.Empty : " · disabled");
+            }
+            else
+            {
+                RecurrenceSummary = $"Occurrence {task.OccurrenceKey}";
+            }
         }
         else
         {
-            RecurrenceSummary = "No recurrence";
+            AttachedRecurrenceTemplateId = null;
+            HasAttachedRecurrence = false;
+            RecurrenceTemplateEnabled = false;
+            RecurrenceSummary = string.IsNullOrWhiteSpace(task?.OccurrenceKey)
+                ? "No recurrence"
+                : $"Detached occurrence · key {task.OccurrenceKey}";
         }
+
+        RefreshRecurrenceDraftSummary();
 
         var reminders = await _reminders.ListForTaskAsync(taskId).ConfigureAwait(true);
         ReminderSummary = reminders.Count == 0
@@ -1517,22 +1594,11 @@ public partial class ManagerViewModel : ObservableObject
             return;
         }
 
-        var anchor = string.IsNullOrWhiteSpace(RecurrenceAnchorDate)
-            ? DateTime.Now.ToString("yyyy-MM-dd")
-            : RecurrenceAnchorDate.Trim();
-
-        var rule = new RecurrenceRule
+        if (!TryBuildRule(out var rule, out var error))
         {
-            Frequency = RecurrenceFrequency,
-            Interval = Math.Max(1, RecurrenceInterval),
-            AnchorLocalDate = anchor,
-            DayOfMonth = RecurrenceDayOfMonth,
-            Weekdays = ParseWeekdays(RecurrenceWeekdays)
-        };
-
-        if (RecurrenceFrequency == RecurrenceFrequency.Monthly)
-        {
-            rule.MonthlyMode = MonthlyRecurrenceMode.DayOfMonth;
+            RecurrenceValidationMessage = error ?? "Invalid recurrence rule.";
+            StatusMessage = RecurrenceValidationMessage;
+            return;
         }
 
         try
@@ -1540,11 +1606,12 @@ public partial class ManagerViewModel : ObservableObject
             await _recurrence.AttachAsync(new AttachRecurrenceRequest
             {
                 TaskId = SelectedTask.Id,
-                Rule = rule,
+                Rule = rule!,
                 TimeZoneId = TimeZoneInfo.Local.Id,
                 ConvertSourceToFirstOccurrence = true
             }).ConfigureAwait(true);
             StatusMessage = "Recurrence attached.";
+            RecurrenceValidationMessage = string.Empty;
             await RefreshAsync().ConfigureAwait(true);
             if (SelectedTask is not null)
             {
@@ -1554,6 +1621,46 @@ public partial class ManagerViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusMessage = ex.Message;
+            RecurrenceValidationMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ModifyRecurrenceScheduleAsync()
+    {
+        if (SelectedTask is null || !HasAttachedRecurrence)
+        {
+            StatusMessage = "Attach recurrence before modifying the schedule.";
+            return;
+        }
+
+        if (!TryBuildRule(out var rule, out var error))
+        {
+            RecurrenceValidationMessage = error ?? "Invalid recurrence rule.";
+            StatusMessage = RecurrenceValidationMessage;
+            return;
+        }
+
+        try
+        {
+            await _recurrence.EditOccurrenceAsync(new EditOccurrenceRequest
+            {
+                TaskId = SelectedTask.Id,
+                Scope = OccurrenceEditScope.ThisAndFuture,
+                FutureRule = rule
+            }).ConfigureAwait(true);
+            StatusMessage = "Series schedule updated for this and future occurrences.";
+            RecurrenceValidationMessage = string.Empty;
+            await RefreshAsync().ConfigureAwait(true);
+            if (SelectedTask is not null)
+            {
+                await LoadRecurrenceAndRemindersAsync(SelectedTask.Id).ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+            RecurrenceValidationMessage = ex.Message;
         }
     }
 
@@ -1572,8 +1679,68 @@ public partial class ManagerViewModel : ObservableObject
                 TaskId = SelectedTask.Id,
                 Scope = OccurrenceEditScope.ThisOccurrenceOnly
             }).ConfigureAwait(true);
-            StatusMessage = "Edited this occurrence only.";
+            StatusMessage = "This occurrence detached from the series.";
             await RefreshAsync().ConfigureAwait(true);
+            if (SelectedTask is not null)
+            {
+                await LoadRecurrenceAndRemindersAsync(SelectedTask.Id).ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task EditSeriesAsync()
+    {
+        if (SelectedTask is null || !HasAttachedRecurrence)
+        {
+            StatusMessage = "Select a recurring occurrence to edit the series.";
+            return;
+        }
+
+        try
+        {
+            await _recurrence.EditOccurrenceAsync(new EditOccurrenceRequest
+            {
+                TaskId = SelectedTask.Id,
+                Scope = OccurrenceEditScope.ThisAndFuture,
+                Title = string.IsNullOrWhiteSpace(EditTitle) ? null : EditTitle.Trim(),
+                Notes = EditNotes
+            }).ConfigureAwait(true);
+            StatusMessage = "Series content updated for this and future occurrences.";
+            await RefreshAsync().ConfigureAwait(true);
+            if (SelectedTask is not null)
+            {
+                await LoadRecurrenceAndRemindersAsync(SelectedTask.Id).ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DisableRecurrenceAsync()
+    {
+        if (AttachedRecurrenceTemplateId is not { } templateId)
+        {
+            StatusMessage = "No recurrence template to disable.";
+            return;
+        }
+
+        try
+        {
+            await _recurrence.DisableAsync(templateId).ConfigureAwait(true);
+            StatusMessage = "Recurrence disabled. Existing occurrences stay independent.";
+            await RefreshAsync().ConfigureAwait(true);
+            if (SelectedTask is not null)
+            {
+                await LoadRecurrenceAndRemindersAsync(SelectedTask.Id).ConfigureAwait(true);
+            }
         }
         catch (Exception ex)
         {
@@ -1833,19 +2000,155 @@ public partial class ManagerViewModel : ObservableObject
             System.Windows.MessageBoxImage.Information);
     }
 
-    private static int[]? ParseWeekdays(string csv)
+    partial void OnRecurrenceFrequencyChanged(RecurrenceFrequency value) => RefreshRecurrenceUiState();
+
+    partial void OnRecurrenceIntervalChanged(int value) => RefreshRecurrenceDraftSummary();
+
+    partial void OnMonthlyRecurrenceModeChanged(MonthlyRecurrenceMode value) => RefreshRecurrenceUiState();
+
+    partial void OnRecurrenceDayOfMonthChanged(int value) => RefreshRecurrenceDraftSummary();
+
+    partial void OnRecurrenceWeekOfMonthChanged(int value) => RefreshRecurrenceDraftSummary();
+
+    partial void OnRecurrenceWeekdayOfMonthChanged(DayOfWeek value) => RefreshRecurrenceDraftSummary();
+
+    partial void OnRecurrenceAnchorDateValueChanged(DateTime? value) => RefreshRecurrenceDraftSummary();
+
+    partial void OnRecurrenceLocalTimeChanged(string value) => RefreshRecurrenceDraftSummary();
+
+    partial void OnWeekdaySundayChanged(bool value) => RefreshRecurrenceDraftSummary();
+
+    partial void OnWeekdayMondayChanged(bool value) => RefreshRecurrenceDraftSummary();
+
+    partial void OnWeekdayTuesdayChanged(bool value) => RefreshRecurrenceDraftSummary();
+
+    partial void OnWeekdayWednesdayChanged(bool value) => RefreshRecurrenceDraftSummary();
+
+    partial void OnWeekdayThursdayChanged(bool value) => RefreshRecurrenceDraftSummary();
+
+    partial void OnWeekdayFridayChanged(bool value) => RefreshRecurrenceDraftSummary();
+
+    partial void OnWeekdaySaturdayChanged(bool value) => RefreshRecurrenceDraftSummary();
+
+    private void RefreshRecurrenceUiState()
     {
-        var parts = csv.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var days = new List<int>();
-        foreach (var part in parts)
+        ShowWeekdayPicker = RecurrenceFrequency is RecurrenceFrequency.Weekly or RecurrenceFrequency.SelectedWeekdays;
+        ShowMonthlyOptions = RecurrenceFrequency == RecurrenceFrequency.Monthly;
+        ShowDayOfMonthPicker = ShowMonthlyOptions && MonthlyRecurrenceMode == MonthlyRecurrenceMode.DayOfMonth;
+        ShowNthWeekdayPicker = ShowMonthlyOptions && MonthlyRecurrenceMode == MonthlyRecurrenceMode.NthWeekday;
+        RecurrenceIntervalLabel = RecurrenceFrequency switch
         {
-            if (int.TryParse(part, out var d) && d is >= 0 and <= 6)
-            {
-                days.Add(d);
-            }
+            RecurrenceFrequency.Weekly => "Every N weeks",
+            RecurrenceFrequency.Monthly => "Every N months",
+            RecurrenceFrequency.SelectedWeekdays => "Interval (unused for selected weekdays)",
+            RecurrenceFrequency.CustomIntervalDays => "Every N days",
+            _ => "Every N days"
+        };
+        RefreshRecurrenceDraftSummary();
+    }
+
+    private void RefreshRecurrenceDraftSummary()
+    {
+        if (!TryBuildRule(out var rule, out var error))
+        {
+            RecurrenceDraftSummary = string.Empty;
+            RecurrenceValidationMessage = error ?? "Invalid recurrence rule.";
+            return;
         }
 
-        return days.Count == 0 ? null : days.Distinct().ToArray();
+        RecurrenceValidationMessage = string.Empty;
+        RecurrenceDraftSummary = RecurrenceRuleFormatter.Summarize(rule!);
+    }
+
+    private bool TryBuildRule(out RecurrenceRule? rule, out string? error)
+    {
+        var anchor = RecurrenceAnchorDateValue?.Date ?? DateTime.Today;
+        var localTime = string.IsNullOrWhiteSpace(RecurrenceLocalTime)
+            ? null
+            : RecurrenceLocalTime.Trim();
+        var weekdays = CollectSelectedWeekdays();
+        if (RecurrenceFrequency == RecurrenceFrequency.Weekly
+            && (weekdays is null || weekdays.Length == 0))
+        {
+            weekdays = [(int)anchor.DayOfWeek];
+        }
+
+        rule = new RecurrenceRule
+        {
+            Frequency = RecurrenceFrequency,
+            Interval = Math.Max(1, RecurrenceInterval),
+            AnchorLocalDate = anchor.ToString("yyyy-MM-dd"),
+            LocalTime = localTime
+        };
+
+        switch (RecurrenceFrequency)
+        {
+            case RecurrenceFrequency.Weekly:
+            case RecurrenceFrequency.SelectedWeekdays:
+                rule.Weekdays = weekdays;
+                break;
+            case RecurrenceFrequency.Monthly when MonthlyRecurrenceMode == MonthlyRecurrenceMode.DayOfMonth:
+                rule.MonthlyMode = MonthlyRecurrenceMode.DayOfMonth;
+                rule.DayOfMonth = RecurrenceDayOfMonth;
+                break;
+            case RecurrenceFrequency.Monthly:
+                rule.MonthlyMode = MonthlyRecurrenceMode.NthWeekday;
+                rule.WeekOfMonth = RecurrenceWeekOfMonth;
+                rule.WeekdayOfMonth = RecurrenceWeekdayOfMonth;
+                break;
+        }
+
+        return RecurrenceRuleFormatter.TryValidate(rule, out error);
+    }
+
+    private void ApplyRuleToEditor(RecurrenceRule rule)
+    {
+        RecurrenceFrequency = rule.Frequency;
+        RecurrenceInterval = Math.Max(1, rule.Interval);
+        MonthlyRecurrenceMode = rule.MonthlyMode;
+        RecurrenceDayOfMonth = rule.DayOfMonth ?? RecurrenceDayOfMonth;
+        RecurrenceWeekOfMonth = rule.WeekOfMonth ?? 1;
+        RecurrenceWeekdayOfMonth = rule.WeekdayOfMonth ?? DayOfWeek.Monday;
+        RecurrenceLocalTime = rule.LocalTime ?? string.Empty;
+        if (DateOnly.TryParse(rule.AnchorLocalDate, out var anchor))
+        {
+            RecurrenceAnchorDateValue = anchor.ToDateTime(TimeOnly.MinValue);
+        }
+
+        SetWeekdayFlags(rule.Weekdays);
+        RefreshRecurrenceUiState();
+    }
+
+    private int[]? CollectSelectedWeekdays()
+    {
+        var days = new List<int>(7);
+        if (WeekdaySunday) days.Add(0);
+        if (WeekdayMonday) days.Add(1);
+        if (WeekdayTuesday) days.Add(2);
+        if (WeekdayWednesday) days.Add(3);
+        if (WeekdayThursday) days.Add(4);
+        if (WeekdayFriday) days.Add(5);
+        if (WeekdaySaturday) days.Add(6);
+        return days.Count == 0 ? null : days.ToArray();
+    }
+
+    private void SetWeekdayFlags(int[]? weekdays)
+    {
+        var set = weekdays is null
+            ? null
+            : new HashSet<int>(weekdays);
+        WeekdaySunday = set?.Contains(0) == true;
+        WeekdayMonday = set?.Contains(1) == true;
+        WeekdayTuesday = set?.Contains(2) == true;
+        WeekdayWednesday = set?.Contains(3) == true;
+        WeekdayThursday = set?.Contains(4) == true;
+        WeekdayFriday = set?.Contains(5) == true;
+        WeekdaySaturday = set?.Contains(6) == true;
+        if (set is null)
+        {
+            // Sensible defaults for weekday pickers when rule has none.
+            WeekdayMonday = WeekdayTuesday = WeekdayWednesday = WeekdayThursday = WeekdayFriday = true;
+        }
     }
 
     public async Task DropMoveToParentAsync(TaskRowViewModel source, TaskRowViewModel newParent)
