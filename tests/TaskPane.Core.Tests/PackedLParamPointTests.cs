@@ -32,4 +32,18 @@ public class PackedLParamPointTests
         Assert.Equal(10, x);
         Assert.Equal(-40, y);
     }
+
+    [Fact]
+    public void Unpack_win64_sign_extended_negative_coordinates()
+    {
+        // Win64 delivers LOWORD/HIWORD in the low 32 bits, sign-extended into LPARAM.
+        // OverlayWindow uses lParam.ToInt64() then this helper (not ToInt32()).
+        long lParam = unchecked((int)0xFFD8FFF6); // x=-10, y=-40
+
+        PackedLParamPoint.Unpack(lParam, out var x, out var y);
+
+        Assert.Equal(-10, x);
+        Assert.Equal(-40, y);
+        Assert.True(lParam < 0);
+    }
 }

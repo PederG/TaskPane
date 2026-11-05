@@ -174,10 +174,26 @@ public sealed class TaskService
         task.UpdatedUtc = now;
         task.Revision++;
 
+        // Stop the slept task's open timer, and when sleeping a parent also stop any
+        // descendant that holds the (single) open session. Child sleep stays independent —
+        // siblings / unrelated tasks keep running. CloseSession preserves elapsed time.
+        // Wake / schedule expiry only restore visibility; they never restart a timer.
+        var stopTimerIds = new List<TaskId> { task.Id };
+        if (task.IsRoot)
+        {
+            var children = await _tasks.ListChildrenAsync(task.Id, includeDeleted: false, cancellationToken)
+                .ConfigureAwait(false);
+            stopTimerIds.AddRange(children.Select(c => c.Id));
+        }
+
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
-            await _timeTracking.EndActiveForTaskAsync(task.Id, SessionEndReason.Slept, ct)
-                .ConfigureAwait(false);
+            foreach (var stopId in stopTimerIds)
+            {
+                await _timeTracking.EndActiveForTaskAsync(stopId, SessionEndReason.Slept, ct)
+                    .ConfigureAwait(false);
+            }
+
             await _tasks.UpdateAsync(task, ct).ConfigureAwait(false);
             await _history.RecordSleptAsync(before, task, ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);

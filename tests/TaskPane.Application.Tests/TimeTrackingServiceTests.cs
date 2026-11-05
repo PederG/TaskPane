@@ -136,6 +136,81 @@ public sealed class TimeTrackingServiceTests
     }
 
     [Fact]
+    public async Task Sleeping_parent_stops_descendant_active_timer_with_Slept_and_preserves_time()
+    {
+        var harness = CreateHarness();
+        var parent = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Parent" });
+        var child = await harness.Tasks.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Child",
+            ParentTaskId = parent.Id
+        });
+
+        await harness.Time.StartOrSwitchAsync(child.Id);
+        harness.Clock.UtcNow = harness.Clock.UtcNow.AddMinutes(12);
+
+        await harness.Tasks.SleepAsync(new SleepTaskRequest { Id = parent.Id, Preset = SleepPreset.OneHour });
+
+        Assert.Null(await harness.Time.GetActiveSessionAsync());
+        var session = (await harness.Time.ListSessionsForTaskAsync(child.Id)).Single();
+        Assert.Equal(SessionEndReason.Slept, session.EndReason);
+        Assert.Equal(TimeSpan.FromMinutes(12), session.Duration);
+        Assert.False(session.IsDiscarded);
+
+        var totals = await harness.Time.GetTotalsAsync(child.Id);
+        Assert.Equal(TimeSpan.FromMinutes(12), totals.Direct);
+    }
+
+    [Fact]
+    public async Task Sleeping_subtask_does_not_stop_unrelated_active_timer()
+    {
+        var harness = CreateHarness();
+        var parent = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Parent" });
+        var childA = await harness.Tasks.CreateAsync(new CreateTaskRequest
+        {
+            Title = "A",
+            ParentTaskId = parent.Id
+        });
+        var childB = await harness.Tasks.CreateAsync(new CreateTaskRequest
+        {
+            Title = "B",
+            ParentTaskId = parent.Id
+        });
+        var unrelated = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Other root" });
+
+        await harness.Time.StartOrSwitchAsync(childB.Id);
+        await harness.Tasks.SleepAsync(new SleepTaskRequest { Id = childA.Id, Preset = SleepPreset.OneHour });
+
+        var active = await harness.Time.GetActiveSessionAsync();
+        Assert.NotNull(active);
+        Assert.Equal(childB.Id, active!.TaskId);
+        Assert.Empty(await harness.Time.ListSessionsForTaskAsync(childA.Id));
+
+        await harness.Time.StartOrSwitchAsync(unrelated.Id);
+        await harness.Tasks.SleepAsync(new SleepTaskRequest { Id = childB.Id, Preset = SleepPreset.OneHour });
+        active = await harness.Time.GetActiveSessionAsync();
+        Assert.NotNull(active);
+        Assert.Equal(unrelated.Id, active!.TaskId);
+    }
+
+    [Fact]
+    public async Task Wake_after_sleep_does_not_restart_timer()
+    {
+        var harness = CreateHarness();
+        var task = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Timed" });
+        await harness.Time.StartOrSwitchAsync(task.Id);
+        harness.Clock.UtcNow = harness.Clock.UtcNow.AddMinutes(5);
+        await harness.Tasks.SleepAsync(new SleepTaskRequest { Id = task.Id, Preset = SleepPreset.OneHour });
+
+        Assert.Null(await harness.Time.GetActiveSessionAsync());
+        await harness.Tasks.WakeAsync(task.Id);
+
+        Assert.Null(await harness.Time.GetActiveSessionAsync());
+        Assert.Single(await harness.Time.ListSessionsForTaskAsync(task.Id));
+        Assert.Equal(SessionEndReason.Slept, (await harness.Time.ListSessionsForTaskAsync(task.Id)).Single().EndReason);
+    }
+
+    [Fact]
     public async Task Lock_pause_remembers_resume_target()
     {
         var harness = CreateHarness();
