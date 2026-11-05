@@ -7,11 +7,13 @@ using TaskPane.App.Services;
 using TaskPane.App.ViewModels;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
+using TaskPane.Core.Interop;
 using TaskPane.Core.Placement;
 using MediaBrushes = System.Windows.Media.Brushes;
 using WpfContextMenu = System.Windows.Controls.ContextMenu;
 using WpfMenuItem = System.Windows.Controls.MenuItem;
 using WpfPoint = System.Windows.Point;
+using WindowBackdrop = Wpf.Ui.Controls.WindowBackdrop;
 
 namespace TaskPane.App.Windows;
 
@@ -75,6 +77,10 @@ public partial class OverlayWindow : Window
             source.CompositionTarget.BackgroundColor = Colors.Transparent;
         }
 
+        // Scrub any DWM system backdrop (Mica/Acrylic) that global theme Apply may have left on
+        // this HWND. AllowsTransparency + native backdrop → opaque white corner triangles.
+        IsolateFromNativeBackdrop();
+
         source.AddHook(WndProc);
     }
 
@@ -89,7 +95,18 @@ public partial class OverlayWindow : Window
         }
 
         Background = MediaBrushes.Transparent;
+        IsolateFromNativeBackdrop();
         ApplyRootSurfaceClip();
+    }
+
+    /// <summary>
+    /// Compact overlay must stay a plain layered WPF window — no DWM system backdrop.
+    /// If white corners persist after global Apply(None) + this scrub, next Windows check is
+    /// HWND extended styles (WS_EX_LAYERED) vs a minimal AllowsTransparency probe window.
+    /// </summary>
+    private void IsolateFromNativeBackdrop()
+    {
+        _ = WindowBackdrop.RemoveBackdrop(this);
     }
 
     private void RootSurface_OnSizeChanged(object sender, SizeChangedEventArgs e) => ApplyRootSurfaceClip();
@@ -119,8 +136,8 @@ public partial class OverlayWindow : Window
         }
 
         // Screen coordinates from lParam → window-local DIP for edge hit testing.
-        var screenX = (short)(lParam.ToInt32() & 0xFFFF);
-        var screenY = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
+        // Use ToInt64 + signed 16-bit halves — ToInt32() is unsafe on 64-bit processes.
+        PackedLParamPoint.Unpack(lParam.ToInt64(), out var screenX, out var screenY);
         WpfPoint local;
         try
         {
