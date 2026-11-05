@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using TaskPane.App.Services;
@@ -7,13 +8,29 @@ using TaskPane.App.ViewModels;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 using TaskPane.Core.Placement;
+using MediaBrushes = System.Windows.Media.Brushes;
 using WpfContextMenu = System.Windows.Controls.ContextMenu;
 using WpfMenuItem = System.Windows.Controls.MenuItem;
+using WpfPoint = System.Windows.Point;
 
 namespace TaskPane.App.Windows;
 
 public partial class OverlayWindow : Window
 {
+    private const int WmNcHitTest = 0x0084;
+    private const int HtClient = 1;
+    private const int HtLeft = 10;
+    private const int HtRight = 11;
+    private const int HtTop = 12;
+    private const int HtTopLeft = 13;
+    private const int HtTopRight = 14;
+    private const int HtBottom = 15;
+    private const int HtBottomLeft = 16;
+    private const int HtBottomRight = 17;
+
+    /// <summary>Invisible edge hit-test thickness (DIP) for layered-window resize.</summary>
+    private const double ResizeBorderDip = 6;
+
     private readonly OverlayViewModel _viewModel;
     private readonly DispatcherTimer _elapsedTimer;
     private CancellationTokenSource? _placementSaveCts;
@@ -27,6 +44,7 @@ public partial class OverlayWindow : Window
         _viewModel.ConfirmParentCompletion = ConfirmParentCompletionAsync;
         // Layered transparent host must stay fully opaque; content translucency is on RootSurface.
         Opacity = 1;
+        Background = MediaBrushes.Transparent;
 
         _elapsedTimer = new DispatcherTimer
         {
@@ -36,7 +54,43 @@ public partial class OverlayWindow : Window
         _elapsedTimer.Start();
     }
 
-    private void OverlayWindow_OnLoaded(object sender, RoutedEventArgs e) => ApplyRootSurfaceClip();
+    private void OverlayWindow_OnSourceInitialized(object? sender, EventArgs e)
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var source = HwndSource.FromHwnd(handle);
+        if (source is null)
+        {
+            return;
+        }
+
+        // WPF layered windows default CompositionTarget.BackgroundColor to white — that paints
+        // opaque rectangular corners outside the rounded RootSurface. Keep it transparent.
+        if (source.CompositionTarget is not null)
+        {
+            source.CompositionTarget.BackgroundColor = Colors.Transparent;
+        }
+
+        source.AddHook(WndProc);
+    }
+
+    private void OverlayWindow_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        // Re-assert after theme/backdrop helpers that may restore SystemColors.WindowColor.
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle != IntPtr.Zero
+            && HwndSource.FromHwnd(handle)?.CompositionTarget is { } compositionTarget)
+        {
+            compositionTarget.BackgroundColor = Colors.Transparent;
+        }
+
+        Background = MediaBrushes.Transparent;
+        ApplyRootSurfaceClip();
+    }
 
     private void RootSurface_OnSizeChanged(object sender, SizeChangedEventArgs e) => ApplyRootSurfaceClip();
 
@@ -55,6 +109,56 @@ public partial class OverlayWindow : Window
             new Rect(0, 0, RootSurface.ActualWidth, RootSurface.ActualHeight),
             radius,
             radius);
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg != WmNcHitTest)
+        {
+            return IntPtr.Zero;
+        }
+
+        // Screen coordinates from lParam → window-local DIP for edge hit testing.
+        var screenX = (short)(lParam.ToInt32() & 0xFFFF);
+        var screenY = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
+        WpfPoint local;
+        try
+        {
+            local = PointFromScreen(new WpfPoint(screenX, screenY));
+        }
+        catch (InvalidOperationException)
+        {
+            return IntPtr.Zero;
+        }
+
+        var width = ActualWidth;
+        var height = ActualHeight;
+        if (width <= 0 || height <= 0)
+        {
+            return IntPtr.Zero;
+        }
+
+        var border = ResizeBorderDip;
+        var onLeft = local.X <= border;
+        var onRight = local.X >= width - border;
+        var onTop = local.Y <= border;
+        var onBottom = local.Y >= height - border;
+
+        var hit = (onLeft, onRight, onTop, onBottom) switch
+        {
+            (true, _, true, _) => HtTopLeft,
+            (_, true, true, _) => HtTopRight,
+            (true, _, _, true) => HtBottomLeft,
+            (_, true, _, true) => HtBottomRight,
+            (true, _, _, _) => HtLeft,
+            (_, true, _, _) => HtRight,
+            (_, _, true, _) => HtTop,
+            (_, _, _, true) => HtBottom,
+            _ => HtClient
+        };
+
+        handled = true;
+        return new IntPtr(hit);
     }
 
     public async Task InitializeAsync()
