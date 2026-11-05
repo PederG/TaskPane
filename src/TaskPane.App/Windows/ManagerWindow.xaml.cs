@@ -17,7 +17,10 @@ public partial class ManagerWindow : FluentWindow
         InitializeComponent();
         _viewModel = viewModel;
         DataContext = viewModel;
-        Wpf.Ui.Appearance.SystemThemeWatcher.Watch(this);
+        // Watch with explicit Mica: system theme changes re-apply backdrop on this FluentWindow
+        // only (UpdateBackground on the observed HWND). Global Apply still uses None so the
+        // compact overlay stays free of native backdrop; MainWindow is pinned to Manager.
+        Wpf.Ui.Appearance.SystemThemeWatcher.Watch(this, Wpf.Ui.Controls.WindowBackdropType.Mica);
     }
 
     public Task InitializeAsync() => _viewModel.InitializeAsync();

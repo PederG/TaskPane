@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using TaskPane.App.Services;
 using TaskPane.Application.Models;
 using TaskPane.Application.Services;
 using TaskPane.Core.Entities;
@@ -8,7 +9,6 @@ using TaskPane.Core.Enums;
 using TaskPane.Core.Ids;
 using TaskPane.Core.Recurrence;
 using TaskPane.Core.Time;
-using Wpf.Ui.Appearance;
 using Wpf.Ui.Controls;
 using ReminderSettings = TaskPane.Core.Entities.ReminderSettings;
 using AuditAction = TaskPane.Core.Enums.AuditAction;
@@ -28,6 +28,7 @@ public partial class ManagerViewModel : ObservableObject
     private readonly BackupService _backups;
     private readonly TransferService _transfer;
     private readonly AppSettingsService _appSettings;
+    private readonly UiPresentationController _presentation;
     private CancellationTokenSource? _searchDebounceCts;
     private bool _suppressQueryRefresh;
     private bool _suppressNavSync;
@@ -43,7 +44,8 @@ public partial class ManagerViewModel : ObservableObject
         ReminderService reminders,
         BackupService backups,
         TransferService transfer,
-        AppSettingsService appSettings)
+        AppSettingsService appSettings,
+        UiPresentationController presentation)
     {
         _taskService = taskService;
         _organization = organization;
@@ -56,6 +58,7 @@ public partial class ManagerViewModel : ObservableObject
         _backups = backups;
         _transfer = transfer;
         _appSettings = appSettings;
+        _presentation = presentation;
         _selectedNavItem = NavItems[0];
         _workspaceTitle = NavItems[0].Title;
     }
@@ -1244,10 +1247,8 @@ public partial class ManagerViewModel : ObservableObject
     private void ToggleTheme()
     {
         IsDarkTheme = !IsDarkTheme;
-        ApplicationThemeManager.Apply(
-            IsDarkTheme ? ApplicationTheme.Dark : ApplicationTheme.Light,
-            WindowBackdropType.Mica,
-            updateAccent: true);
+        // Routes through UiPresentationController: global Apply(None) + EnsureManagerMica.
+        _presentation.ApplyTheme(IsDarkTheme ? ThemePreference.Dark : ThemePreference.Light);
     }
 
     [RelayCommand]

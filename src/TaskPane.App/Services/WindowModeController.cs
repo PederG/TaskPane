@@ -14,6 +14,10 @@ public sealed class WindowModeController
     {
         _overlay = overlay;
         _manager = manager;
+        // ApplicationThemeManager.Apply / SystemThemeWatcher.ApplySystemTheme call
+        // UpdateBackground(MainWindow, …). Keep MainWindow on the expanded manager so
+        // default Mica from those paths never lands on the layered compact overlay.
+        System.Windows.Application.Current.MainWindow = manager;
     }
 
     public void ShowOverlay()
@@ -31,6 +35,8 @@ public sealed class WindowModeController
 
         _overlay.Show();
         _overlay.Activate();
+        // Re-assert after Show(): WPF only assigns MainWindow when it was null, but be explicit.
+        System.Windows.Application.Current.MainWindow = _manager;
     }
 
     public void ShowManager()
@@ -44,5 +50,6 @@ public sealed class WindowModeController
         _overlay.Hide();
         _manager.Show();
         _manager.Activate();
+        System.Windows.Application.Current.MainWindow = _manager;
     }
 }

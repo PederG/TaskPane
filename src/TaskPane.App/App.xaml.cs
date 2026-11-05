@@ -37,11 +37,14 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
         // Temporary theme until persisted app settings load (Phase 7).
+        // WindowBackdropType.None: global Apply targets Application.MainWindow. Mica there
+        // conflicts with the compact overlay's AllowsTransparency layered HWND (white corners).
+        // Expanded manager keeps Mica via FluentWindow.WindowBackdropType / EnsureManagerMica.
         ApplicationThemeManager.Apply(
             ApplicationThemeManager.GetSystemTheme() == SystemTheme.Dark
                 ? ApplicationTheme.Dark
                 : ApplicationTheme.Light,
-            WindowBackdropType.Mica,
+            WindowBackdropType.None,
             updateAccent: true);
 
         _singleInstance = new SingleInstanceGuard();
