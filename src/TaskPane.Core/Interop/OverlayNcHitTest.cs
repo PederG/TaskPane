@@ -20,6 +20,12 @@ public static class OverlayNcHitTest
     /// <summary>Default invisible resize edge thickness (DIP).</summary>
     public const double DefaultResizeBorderDip = 6;
 
+    /// <summary>
+    /// Default corner hit square (DIP). Larger than the edge strip so diagonal resize remains
+    /// reachable on a rounded RootSurface (visual corner is inset from the HWND corner).
+    /// </summary>
+    public const double DefaultCornerHitDip = 16;
+
     /// <summary>Default top drag band (DIP) — matches TpOverlayPad / RootSurface upper padding.</summary>
     public const double DefaultTopCaptionBandDip = 14;
 
@@ -30,15 +36,19 @@ public static class OverlayNcHitTest
     /// <param name="localY">Y in window DIP.</param>
     /// <param name="windowWidth">Window ActualWidth (DIP).</param>
     /// <param name="windowHeight">Window ActualHeight (DIP).</param>
-    /// <param name="resizeBorderDip">Edge thickness for HTLEFT/RIGHT/TOP/BOTTOM and corners.</param>
+    /// <param name="resizeBorderDip">Edge thickness for HTLEFT/RIGHT/TOP/BOTTOM.</param>
+    /// <param name="cornerHitDip">
+    /// Corner square that wins over edge strips (and over the top caption band). Should be
+    /// ≥ <paramref name="resizeBorderDip"/> so HTBOTTOMRIGHT stays reachable near rounded corners.
+    /// </param>
     /// <param name="topCaptionBandDip">
     /// Height of the top-center drag strip (≈ RootSurface upper padding). Top-left / top-right
-    /// resize corners still win inside this band.
+    /// resize corners still win inside this band (unless over interactive chrome).
     /// </param>
     /// <param name="positionLocked">When true, never return <see cref="HtCaption"/>.</param>
     /// <param name="overInteractiveChrome">
     /// True when the point is over Search / Expand / More (or other header action buttons).
-    /// Forces <see cref="HtClient"/> so those controls keep mouse input.
+    /// Forces <see cref="HtClient"/> so those controls keep mouse input (beats corners/caption).
     /// </param>
     /// <param name="visibleLeft">Inclusive left of the visible RootSurface (window DIP).</param>
     /// <param name="visibleTop">Inclusive top of the visible RootSurface (window DIP).</param>
@@ -50,6 +60,7 @@ public static class OverlayNcHitTest
         double windowWidth,
         double windowHeight,
         double resizeBorderDip,
+        double cornerHitDip,
         double topCaptionBandDip,
         bool positionLocked,
         bool overInteractiveChrome,
@@ -64,6 +75,7 @@ public static class OverlayNcHitTest
         }
 
         var border = resizeBorderDip < 0 ? 0 : resizeBorderDip;
+        var corner = cornerHitDip < border ? border : cornerHitDip;
         var captionBand = topCaptionBandDip < 0 ? 0 : topCaptionBandDip;
 
         // Limit caption / edge decisions to the visible RootSurface silhouette.
@@ -77,33 +89,45 @@ public static class OverlayNcHitTest
             return HtClient;
         }
 
-        // Resize borders relative to the visible surface (not the raw HWND), so inset chrome
-        // still gets correct corner grip after SetWindowRgn.
-        var onLeft = localX <= visibleLeft + border;
-        var onRight = localX >= visibleRight - border;
-        var onTop = localY <= visibleTop + border;
-        var onBottom = localY >= visibleBottom - border;
+        // Header action buttons must keep client hits — never caption or corner resize.
+        if (overInteractiveChrome)
+        {
+            return HtClient;
+        }
 
-        // Corners always win (including over the caption band).
-        if (onLeft && onTop)
+        // Enlarged corner zones relative to the visible surface (not the raw HWND), so inset
+        // chrome / rounded silhouette still gets diagonal grips after SetWindowRgn.
+        var nearLeft = localX <= visibleLeft + corner;
+        var nearRight = localX >= visibleRight - corner;
+        var nearTop = localY <= visibleTop + corner;
+        var nearBottom = localY >= visibleBottom - corner;
+
+        // Corners always win over edge strips and the caption band.
+        if (nearLeft && nearTop)
         {
             return HtTopLeft;
         }
 
-        if (onRight && onTop)
+        if (nearRight && nearTop)
         {
             return HtTopRight;
         }
 
-        if (onLeft && onBottom)
+        if (nearLeft && nearBottom)
         {
             return HtBottomLeft;
         }
 
-        if (onRight && onBottom)
+        if (nearRight && nearBottom)
         {
             return HtBottomRight;
         }
+
+        // Edge strips (thinner than corner squares) — only after corners lose.
+        var onLeft = localX <= visibleLeft + border;
+        var onRight = localX >= visibleRight - border;
+        var onTop = localY <= visibleTop + border;
+        var onBottom = localY >= visibleBottom - border;
 
         if (onLeft)
         {
@@ -125,7 +149,7 @@ public static class OverlayNcHitTest
         var inTopCaptionBand = localY < visibleTop + captionBand;
         if (inTopCaptionBand)
         {
-            if (positionLocked || overInteractiveChrome)
+            if (positionLocked)
             {
                 return HtClient;
             }
