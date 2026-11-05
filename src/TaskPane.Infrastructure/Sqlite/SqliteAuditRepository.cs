@@ -170,14 +170,17 @@ public sealed class SqliteAuditRepository : IAuditRepository
             cmd.CommandText = """
                 SELECT * FROM AuditEvents
                 WHERE IsUndone = 0
-                  AND Action IN ($c, $s, $m, $d)
+                  AND Action IN ($u, $c, $s, $m, $d, $da, $dr)
                 ORDER BY TimestampUtc DESC
                 LIMIT 1;
                 """;
+            cmd.Parameters.AddWithValue("$u", (int)AuditAction.Updated);
             cmd.Parameters.AddWithValue("$c", (int)AuditAction.Completed);
             cmd.Parameters.AddWithValue("$s", (int)AuditAction.Slept);
             cmd.Parameters.AddWithValue("$m", (int)AuditAction.Moved);
             cmd.Parameters.AddWithValue("$d", (int)AuditAction.SoftDeleted);
+            cmd.Parameters.AddWithValue("$da", (int)AuditAction.DependencyAdded);
+            cmd.Parameters.AddWithValue("$dr", (int)AuditAction.DependencyRemoved);
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {

@@ -178,6 +178,188 @@ public sealed class DependencyAndHistoryTests
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() => harness.History.UndoAsync(eventId));
         Assert.Equal(ValidationCodes.UndoAlreadyApplied, ex.Code);
+
+        var evaluation = await harness.History.EvaluateUndoAsync(eventId);
+        Assert.False(evaluation.CanUndo);
+        Assert.Contains("already undone", evaluation.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Undo_title_notes_priority_deadline_focus_project_and_tags_in_sequence()
+    {
+        var harness = CreateHarness();
+        var project = await harness.Organization.CreateProjectAsync("Alpha");
+        var tagA = await harness.Organization.CreateTagAsync("urgent");
+        var tagB = await harness.Organization.CreateTagAsync("deep");
+        var task = await harness.Tasks.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Original",
+            Notes = "n1",
+            Priority = TaskPriority.Normal,
+            FocusBucket = FocusBucket.Inbox
+        });
+
+        await harness.Tasks.UpdateAsync(new UpdateTaskRequest
+        {
+            Id = task.Id,
+            Title = "Renamed",
+            Notes = "n1",
+            Priority = TaskPriority.Normal,
+            FocusBucket = FocusBucket.Inbox
+        });
+        await harness.Tasks.UpdateAsync(new UpdateTaskRequest
+        {
+            Id = task.Id,
+            Title = "Renamed",
+            Notes = "expanded notes",
+            Priority = TaskPriority.Normal,
+            FocusBucket = FocusBucket.Inbox
+        });
+        await harness.Tasks.UpdateAsync(new UpdateTaskRequest
+        {
+            Id = task.Id,
+            Title = "Renamed",
+            Notes = "expanded notes",
+            Priority = TaskPriority.High,
+            FocusBucket = FocusBucket.Inbox
+        });
+        await harness.Tasks.SetDeadlineAsync(task.Id, "2026-12-01", "09:30", "Europe/Oslo");
+        await harness.Tasks.SetFocusAsync(task.Id, FocusBucket.Today);
+        await harness.Tasks.UpdateAsync(new UpdateTaskRequest
+        {
+            Id = task.Id,
+            Title = "Renamed",
+            Notes = "expanded notes",
+            Priority = TaskPriority.High,
+            FocusBucket = FocusBucket.Today,
+            DeadlineLocalDate = "2026-12-01",
+            DeadlineLocalTime = "09:30",
+            DeadlineTimeZoneId = "Europe/Oslo",
+            ProjectId = project.Id,
+            TagIds = [tagA.Id, tagB.Id]
+        });
+
+        Assert.Equal(project.Id, (await harness.Tasks.GetAsync(task.Id))!.ProjectId);
+        Assert.Equal(2, (await harness.Tags.GetTagIdsForTaskAsync(task.Id)).Count);
+
+        // Undo project/tags, focus, deadline, priority, notes, title — six undos.
+        await harness.History.UndoLatestAsync();
+        var afterTags = await harness.Tasks.GetAsync(task.Id);
+        Assert.Null(afterTags!.ProjectId);
+        Assert.Empty(await harness.Tags.GetTagIdsForTaskAsync(task.Id));
+        Assert.Equal(FocusBucket.Today, afterTags.FocusBucket);
+
+        await harness.History.UndoLatestAsync();
+        Assert.Equal(FocusBucket.Inbox, (await harness.Tasks.GetAsync(task.Id))!.FocusBucket);
+
+        await harness.History.UndoLatestAsync();
+        Assert.Null((await harness.Tasks.GetAsync(task.Id))!.DeadlineLocalDate);
+
+        await harness.History.UndoLatestAsync();
+        Assert.Equal(TaskPriority.Normal, (await harness.Tasks.GetAsync(task.Id))!.Priority);
+
+        await harness.History.UndoLatestAsync();
+        Assert.Equal("n1", (await harness.Tasks.GetAsync(task.Id))!.Notes);
+
+        await harness.History.UndoLatestAsync();
+        var restored = await harness.Tasks.GetAsync(task.Id);
+        Assert.Equal("Original", restored!.Title);
+        Assert.Equal("n1", restored.Notes);
+        Assert.Equal(TaskPriority.Normal, restored.Priority);
+        Assert.Equal(FocusBucket.Inbox, restored.FocusBucket);
+        Assert.Null(restored.DeadlineLocalDate);
+        Assert.Null(restored.ProjectId);
+        Assert.Empty(await harness.Tags.GetTagIdsForTaskAsync(task.Id));
+
+        var history = await harness.History.ListRecentAsync();
+        Assert.Equal(6, history.Count(e => e.Action == AuditAction.Updated && e.IsUndone));
+        Assert.All(history.Where(e => e.Action == AuditAction.Updated), e =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(e.BeforeJson));
+            Assert.False(string.IsNullOrWhiteSpace(e.AfterJson));
+        });
+    }
+
+    [Fact]
+    public async Task Undo_update_rejects_silent_overwrite_when_newer_edit_exists()
+    {
+        var harness = CreateHarness();
+        var task = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "A" });
+        await harness.Tasks.UpdateAsync(new UpdateTaskRequest
+        {
+            Id = task.Id,
+            Title = "B",
+            Priority = TaskPriority.Normal,
+            FocusBucket = FocusBucket.Inbox
+        });
+        var firstEdit = (await harness.History.PeekUndoAsync())!;
+        await harness.Tasks.UpdateAsync(new UpdateTaskRequest
+        {
+            Id = task.Id,
+            Title = "C",
+            Priority = TaskPriority.Normal,
+            FocusBucket = FocusBucket.Inbox
+        });
+
+        var conflict = await Assert.ThrowsAsync<BusinessException>(() => harness.History.UndoAsync(firstEdit.Id));
+        Assert.Equal(ValidationCodes.UndoConflict, conflict.Code);
+        Assert.Equal("C", (await harness.Tasks.GetAsync(task.Id))!.Title);
+
+        var evaluation = await harness.History.EvaluateUndoAsync(firstEdit.Id);
+        Assert.False(evaluation.CanUndo);
+        Assert.Contains("newer", evaluation.Reason, StringComparison.OrdinalIgnoreCase);
+
+        // Latest edit still undoable; first edit remains not undone (audit preserved).
+        await harness.History.UndoLatestAsync();
+        Assert.Equal("B", (await harness.Tasks.GetAsync(task.Id))!.Title);
+        Assert.False((await harness.Audit.GetByIdAsync(firstEdit.Id))!.IsUndone);
+    }
+
+    [Fact]
+    public async Task Undo_dependency_add_and_remove_is_reversible()
+    {
+        var harness = CreateHarness();
+        var blocker = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Blocker" });
+        var dependent = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Dependent" });
+
+        await harness.Dependencies.AddRequiredAsync(blocker.Id, dependent.Id);
+        Assert.True((await harness.Dependencies.GetBlockedStateAsync(dependent.Id)).IsBlocked);
+        await harness.History.UndoLatestAsync();
+        Assert.False((await harness.Dependencies.GetBlockedStateAsync(dependent.Id)).IsBlocked);
+        Assert.Contains(await harness.History.ListRecentAsync(), e =>
+            e.Action == AuditAction.DependencyAdded && e.IsUndone);
+
+        var edge = await harness.Dependencies.AddRequiredAsync(blocker.Id, dependent.Id);
+        await harness.Dependencies.RemoveAsync(edge.Id);
+        Assert.False((await harness.Dependencies.GetBlockedStateAsync(dependent.Id)).IsBlocked);
+        await harness.History.UndoLatestAsync();
+        Assert.True((await harness.Dependencies.GetBlockedStateAsync(dependent.Id)).IsBlocked);
+        Assert.Contains(await harness.History.ListRecentAsync(), e =>
+            e.Action == AuditAction.DependencyRemoved && e.IsUndone);
+    }
+
+    [Fact]
+    public async Task Repeat_undo_after_successful_undo_is_rejected_and_can_undo_is_clear()
+    {
+        var harness = CreateHarness();
+        var task = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Once" });
+        await harness.Tasks.UpdateAsync(new UpdateTaskRequest
+        {
+            Id = task.Id,
+            Title = "Twice",
+            Priority = TaskPriority.Normal,
+            FocusBucket = FocusBucket.Inbox
+        });
+        var eventId = (await harness.History.PeekUndoAsync())!.Id;
+        Assert.True((await harness.History.EvaluateUndoAsync(eventId)).CanUndo);
+
+        await harness.History.UndoAsync(eventId);
+        Assert.Equal("Once", (await harness.Tasks.GetAsync(task.Id))!.Title);
+
+        var again = await Assert.ThrowsAsync<BusinessException>(() => harness.History.UndoAsync(eventId));
+        Assert.Equal(ValidationCodes.UndoAlreadyApplied, again.Code);
+        Assert.False((await harness.History.EvaluateUndoAsync(eventId)).CanUndo);
+        Assert.Null(await harness.History.PeekUndoAsync());
     }
 
     [Fact]
@@ -214,7 +396,7 @@ public sealed class DependencyAndHistoryTests
             uow,
             clock,
             NullLogger<TimeTrackingService>.Instance);
-        var history = new HistoryService(audit, tasks, uow, NullLogger<HistoryService>.Instance);
+        var history = new HistoryService(audit, tasks, deps, tags, uow, NullLogger<HistoryService>.Instance);
         var dependencies = new DependencyService(
             deps,
             tasks,
@@ -227,6 +409,11 @@ public sealed class DependencyAndHistoryTests
             uow,
             clock,
             NullLogger<RecurrenceService>.Instance);
+        var organization = new OrganizationService(
+            projects,
+            tags,
+            uow,
+            NullLogger<OrganizationService>.Instance);
         var taskService = new TaskService(
             tasks,
             tags,
@@ -237,7 +424,7 @@ public sealed class DependencyAndHistoryTests
             history,
             recurrence,
             NullLogger<TaskService>.Instance);
-        return new Harness(taskService, dependencies, history, time, deps);
+        return new Harness(taskService, dependencies, history, time, deps, tags, organization, audit);
     }
 
     private sealed record Harness(
@@ -245,7 +432,10 @@ public sealed class DependencyAndHistoryTests
         DependencyService Dependencies,
         HistoryService History,
         TimeTrackingService Time,
-        InMemoryDependencyRepository DependencyRepo);
+        InMemoryDependencyRepository DependencyRepo,
+        InMemoryTagRepository Tags,
+        OrganizationService Organization,
+        InMemoryAuditRepository Audit);
 
     private sealed class FixedClock(DateTimeOffset utcNow) : IClock
     {
@@ -645,7 +835,7 @@ public sealed class DependencyAndHistoryTests
         public Task<AuditEvent?> GetLatestUndoableAsync(CancellationToken cancellationToken = default)
         {
             var item = Items
-                .Where(e => !e.IsUndone && e.Action is AuditAction.Completed or AuditAction.Slept or AuditAction.Moved or AuditAction.SoftDeleted)
+                .Where(e => !e.IsUndone && HistoryService.IsUndoableAction(e.Action))
                 .OrderByDescending(e => e.TimestampUtc)
                 .FirstOrDefault();
             return Task.FromResult(item is null ? null : Clone(item));
