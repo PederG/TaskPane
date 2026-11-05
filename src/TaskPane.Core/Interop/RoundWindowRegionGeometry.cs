@@ -6,9 +6,19 @@ namespace TaskPane.Core.Interop;
 /// Does not assume RootSurface originates at HWND (0,0).
 /// </summary>
 /// <remarks>
+/// <para>
 /// On modern DPI-aware WPF, <c>PointToScreen</c> returns screen coordinates already consistent
 /// with Win32 <c>GetWindowRect</c> (physical pixels). Do <b>not</b> multiply those by DpiScale
 /// again — only the DIP corner radius is converted to physical pixels.
+/// </para>
+/// <para>
+/// <c>CreateRoundRectRgn</c> is binary (no GDI antialiasing). A region that matches RootSurface
+/// clips WPF's CornerRadius AA fringe against the desktop → jagged outer silhouette. Expanding
+/// the region in physical pixels would let more of that fringe show, but also re-exposes the
+/// white HWND host in the corner wedges SetWindowRgn is meant to hide. Shipping keeps the
+/// white-host-safe inset (no expand trial constants). Prefer layered per-pixel alpha for a
+/// smooth outer edge; keep this region as fallback until that path is Windows-verified.
+/// </para>
 /// </remarks>
 public static class RoundWindowRegionGeometry
 {
