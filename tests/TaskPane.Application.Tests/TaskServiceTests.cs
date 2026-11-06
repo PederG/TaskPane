@@ -381,6 +381,26 @@ public sealed class TaskServiceTests
     }
 
     [Fact]
+    public async Task Overlay_query_without_focus_returns_all_awake_buckets_and_excludes_sleeping()
+    {
+        var sut = CreateSut(out _);
+        var inbox = await sut.CreateAsync(new CreateTaskRequest { Title = "Inbox", FocusBucket = FocusBucket.Inbox });
+        var today = await sut.CreateAsync(new CreateTaskRequest { Title = "Today", FocusBucket = FocusBucket.Today });
+        var next = await sut.CreateAsync(new CreateTaskRequest { Title = "Next", FocusBucket = FocusBucket.Next });
+        var someday = await sut.CreateAsync(new CreateTaskRequest { Title = "Someday", FocusBucket = FocusBucket.Someday });
+        await sut.SleepAsync(new SleepTaskRequest { Id = someday.Id, Preset = SleepPreset.Indefinitely });
+
+        var visible = await sut.QueryRootsAsync(new TaskQuery { OverlayVisibility = true });
+        Assert.Contains(visible, t => t.Id.Equals(inbox.Id));
+        Assert.Contains(visible, t => t.Id.Equals(today.Id));
+        Assert.Contains(visible, t => t.Id.Equals(next.Id));
+        Assert.DoesNotContain(visible, t => t.Id.Equals(someday.Id));
+
+        var sleeping = await sut.ListSleepingRootsAsync();
+        Assert.Contains(sleeping, t => t.Id.Equals(someday.Id));
+    }
+
+    [Fact]
     public async Task Move_rejects_parent_with_children_under_another_parent()
     {
         var sut = CreateSut(out _);
