@@ -223,4 +223,33 @@ public sealed class FocusService
                 .ThenBy(t => t.CreatedUtc)
         };
     }
+
+    /// <summary>
+    /// Compact overlay list order: actionable tasks first, then waiting, then blocked.
+    /// Sleeping tasks stay out of the main list (<see cref="TaskQuery.OverlayVisibility"/>)
+    /// and appear in the sleeping panel at the bottom of the overlay.
+    /// Relative order within each band is preserved.
+    /// </summary>
+    public static IReadOnlyList<TaskItem> OrderForOverlay(
+        IEnumerable<TaskItem> tasks,
+        IReadOnlySet<TaskId> blockedTaskIds)
+    {
+        // 0 = ready, 1 = waiting (not blocked), 2 = blocked
+        static int Band(TaskItem task, IReadOnlySet<TaskId> blocked)
+        {
+            if (blocked.Contains(task.Id))
+            {
+                return 2;
+            }
+
+            return task.IsWaiting ? 1 : 0;
+        }
+
+        return tasks
+            .Select((task, index) => (task, index, band: Band(task, blockedTaskIds)))
+            .OrderBy(x => x.band)
+            .ThenBy(x => x.index)
+            .Select(x => x.task)
+            .ToList();
+    }
 }

@@ -53,9 +53,6 @@ public partial class OverlayViewModel : ObservableObject
     public ObservableCollection<TaskRowViewModel> SleepingTasks { get; } = [];
 
     [ObservableProperty]
-    private FocusBucket _selectedFocus = FocusBucket.Inbox;
-
-    [ObservableProperty]
     private string _quickAddText = string.Empty;
 
     [ObservableProperty]
@@ -114,9 +111,6 @@ public partial class OverlayViewModel : ObservableObject
 
     [ObservableProperty]
     private int _sleepingCount;
-
-    [ObservableProperty]
-    private string _focusLabel = "Inbox";
 
     [ObservableProperty]
     private string _taskCountLabel = "0 tasks";
@@ -184,9 +178,10 @@ public partial class OverlayViewModel : ObservableObject
     private async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         var active = await _timeTracking.GetActiveSessionAsync(cancellationToken).ConfigureAwait(true);
+        // Compact overlay lists every non-slept task across Inbox/Today/Next/Someday.
+        // Focus buckets remain a manager-only organization; sleep still hides from this list.
         var query = new TaskQuery
         {
-            FocusBucket = SelectedFocus,
             OverlayVisibility = true,
             HideBlocked = HideBlocked,
             SearchText = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim()
@@ -194,16 +189,16 @@ public partial class OverlayViewModel : ObservableObject
         var roots = await _taskService.QueryRootsAsync(query, cancellationToken).ConfigureAwait(true);
         VisibleTasks.Clear();
 
-        var ids = new List<TaskId>();
-        foreach (var root in roots)
-        {
-            ids.Add(root.Id);
-        }
-
+        var ids = roots.Select(r => r.Id).ToList();
         var blockedMap = await _dependencies.GetBlockedStatesAsync(ids, cancellationToken).ConfigureAwait(true);
+        var blockedIds = blockedMap
+            .Where(kv => kv.Value.IsBlocked)
+            .Select(kv => kv.Key)
+            .ToHashSet();
+        var orderedRoots = FocusService.OrderForOverlay(roots, blockedIds);
         TaskRowViewModel? activeRow = null;
 
-        foreach (var root in roots)
+        foreach (var root in orderedRoots)
         {
             var progress = await _taskService.GetProgressAsync(root.Id, cancellationToken).ConfigureAwait(true);
             var expanded = _expanded.Contains(root.Id);
@@ -230,7 +225,6 @@ public partial class OverlayViewModel : ObservableObject
                 new TaskQuery
                 {
                     OverlayVisibility = true,
-                    FocusBucket = SelectedFocus,
                     HideBlocked = HideBlocked,
                     SearchText = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim()
                 },
@@ -238,7 +232,11 @@ public partial class OverlayViewModel : ObservableObject
             var childBlocked = await _dependencies
                 .GetBlockedStatesAsync(children.Select(c => c.Id).ToList(), cancellationToken)
                 .ConfigureAwait(true);
-            foreach (var child in children)
+            var childBlockedIds = childBlocked
+                .Where(kv => kv.Value.IsBlocked)
+                .Select(kv => kv.Key)
+                .ToHashSet();
+            foreach (var child in FocusService.OrderForOverlay(children, childBlockedIds))
             {
                 var childRow = new TaskRowViewModel(child);
                 await ApplyTimeAsync(childRow, active, cancellationToken).ConfigureAwait(true);
@@ -257,7 +255,7 @@ public partial class OverlayViewModel : ObservableObject
 
         SleepingTasks.Clear();
         var sleeping = await _taskService.ListSleepingRootsAsync(cancellationToken).ConfigureAwait(true);
-        foreach (var item in sleeping.Where(t => t.FocusBucket == SelectedFocus))
+        foreach (var item in sleeping)
         {
             SleepingTasks.Add(new TaskRowViewModel(item));
         }
@@ -268,14 +266,12 @@ public partial class OverlayViewModel : ObservableObject
         var completed = await _taskService.QueryRootsAsync(
             new TaskQuery
             {
-                FocusBucket = SelectedFocus,
                 OnlyCompleted = true
             },
             cancellationToken).ConfigureAwait(true);
         CompletedCount = completed.Count;
 
         VisibleTaskCount = VisibleTasks.Count(t => !t.IsSubtask);
-        FocusLabel = SelectedFocus.ToString();
         TaskCountLabel = VisibleTaskCount == 1 ? "1 task" : $"{VisibleTaskCount} tasks";
         FooterCountsLabel = $"{SleepingCount} sleeping · {CompletedCount} completed";
 
@@ -409,17 +405,11 @@ public partial class OverlayViewModel : ObservableObject
         await RefreshAsync().ConfigureAwait(true);
     }
 
-    partial void OnSelectedFocusChanged(FocusBucket value)
-        => _ = RefreshAsync();
-
     partial void OnHideBlockedChanged(bool value)
         => _ = RefreshAsync();
 
     partial void OnSearchTextChanged(string value)
         => _ = RefreshAsync();
-
-    [RelayCommand]
-    private void SelectFocus(FocusBucket bucket) => SelectedFocus = bucket;
 
     [RelayCommand]
     private void ToggleSearch()

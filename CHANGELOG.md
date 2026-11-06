@@ -2,6 +2,12 @@
 
 All notable TaskPane releases are recorded here.
 
+## 0.7.4 — Overlay lists all non-slept tasks
+
+- Compact overlay no longer filters by Inbox/Today/Next/Someday; it shows every awake (non-slept) task. Focus buckets remain manager-only.
+- Waiting and blocked roots sort below ready work; sleeping stays in the footer sleeping panel.
+- Sleep, Waiting, and Blocked stay distinct: sleep hides + can stop timers; waiting is a free-text annotation; blocked is dependency-derived. DigiFokus via `AppDisplayName` only.
+
 ## 0.7.3 — Remove overlay opacity controls
 
 - Removed overlay opacity menu/slider, ViewModel state, and RootSurface brush-alpha path; chrome stays solid at design alpha.
