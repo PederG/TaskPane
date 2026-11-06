@@ -10,6 +10,7 @@ using TaskPane.App.ViewModels;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 using TaskPane.Core.Interop;
+using TaskPane.Core.Overlay;
 using TaskPane.Core.Placement;
 using MediaBrushes = System.Windows.Media.Brushes;
 using MediaColor = System.Windows.Media.Color;
@@ -68,6 +69,15 @@ public partial class OverlayWindow : Window
             if (e.PropertyName is nameof(OverlayViewModel.Opacity) or null)
             {
                 ApplyRootSurfaceOpacity();
+            }
+
+            // Mini ↔ full chrome changes RootSurface size; refresh SetWindowRgn clip.
+            if (e.PropertyName is nameof(OverlayViewModel.IsMiniSessionChrome)
+                or nameof(OverlayViewModel.OverlayMinHeight)
+                or null)
+            {
+                MinHeight = _viewModel.OverlayMinHeight;
+                ScheduleNativeRoundedRegionUpdate();
             }
         };
 
@@ -490,8 +500,9 @@ public partial class OverlayWindow : Window
     }
 
     /// <summary>
-    /// True when the point is over Search / Expand / More inside <see cref="DragHeader"/>.
-    /// Those must stay HTCLIENT so HTCAPTION never steals their clicks.
+    /// True when the point is over Search / Expand / More inside <see cref="DragHeader"/>,
+    /// or over the mini-strip pause button. Those must stay HTCLIENT so HTCAPTION never
+    /// steals their clicks.
     /// </summary>
     private bool IsOverHeaderActionChrome(WpfPoint local)
     {
@@ -516,6 +527,11 @@ public partial class OverlayWindow : Window
             if (current is System.Windows.Controls.Button found)
             {
                 button = found;
+            }
+
+            if (ReferenceEquals(current, MiniPauseButton))
+            {
+                return true;
             }
 
             if (ReferenceEquals(current, DragHeader))
@@ -543,12 +559,19 @@ public partial class OverlayWindow : Window
 
     public OverlayPlacement CapturePlacement()
     {
+        // Do not persist the mini-strip height as the restored full-chrome height.
+        var height = ActualHeight > 0 ? ActualHeight : Height;
+        if (_viewModel.IsMiniSessionChrome)
+        {
+            height = Math.Max(_viewModel.Placement.Height, OverlaySessionChrome.FullMinHeightDip);
+        }
+
         return new OverlayPlacement
         {
             Left = Left,
             Top = Top,
             Width = Width,
-            Height = ActualHeight > 0 ? ActualHeight : Height,
+            Height = height,
             MaxHeight = _viewModel.MaxContentHeight,
             Opacity = _viewModel.Opacity,
             Topmost = _viewModel.Topmost,
@@ -569,6 +592,55 @@ public partial class OverlayWindow : Window
         MaxHeight = _viewModel.MaxContentHeight;
         EnsureOnScreen();
         _suppressPlacementSave = false;
+    }
+
+    private void OverlayWindow_OnActivated(object? sender, EventArgs e)
+        => _viewModel.NotifyOverlayActivated();
+
+    private void OverlayWindow_OnDeactivated(object? sender, EventArgs e)
+        => _viewModel.NotifyOverlayDeactivated();
+
+    private void MiniSessionStrip_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        // Pause must keep working; anything else expands full chrome (and may drag).
+        if (e.OriginalSource is DependencyObject source
+            && IsInsideMiniPauseButton(source))
+        {
+            return;
+        }
+
+        if (_viewModel.ExpandSessionChromeCommand.CanExecute(null))
+        {
+            _viewModel.ExpandSessionChromeCommand.Execute(null);
+        }
+
+        if (_viewModel.Placement.PositionLocked)
+        {
+            return;
+        }
+
+        if (e.ChangedButton == MouseButton.Left)
+        {
+            DragMove();
+        }
+    }
+
+    private bool IsInsideMiniPauseButton(DependencyObject source)
+    {
+        for (var current = source; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (ReferenceEquals(current, MiniPauseButton))
+            {
+                return true;
+            }
+
+            if (ReferenceEquals(current, this) || ReferenceEquals(current, MiniSessionStrip))
+            {
+                break;
+            }
+        }
+
+        return false;
     }
 
     private void DragHeader_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

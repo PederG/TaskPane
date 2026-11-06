@@ -8,6 +8,7 @@ using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
 using TaskPane.Core.Ids;
 using TaskPane.Core.Notes;
+using TaskPane.Core.Overlay;
 using TaskPane.Core.Time;
 using TaskPane.Core.Validation;
 
@@ -136,8 +137,25 @@ public partial class OverlayViewModel : ObservableObject
     [ObservableProperty]
     private TaskRowViewModel? _activeTaskRow;
 
+    /// <summary>
+    /// True while the overlay HWND is activated / keyboard-focused for chrome policy.
+    /// Starts true so the first show is full chrome until the user leaves the window.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isOverlayFocused = true;
+
+    /// <summary>
+    /// Mini always-on-top strip (title + elapsed + pause) while a timer runs and the overlay
+    /// is not focused. Not tray minimize — window stays visible and Topmost.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isMiniSessionChrome;
+
     /// <summary>List viewport ceiling so SizeToContent can measure without unbounded growth.</summary>
     public double TaskListMaxHeight => Math.Max(120, MaxContentHeight - 280);
+
+    /// <summary>Window MinHeight for the current chrome mode (full vs running-session mini).</summary>
+    public double OverlayMinHeight => OverlaySessionChrome.MinHeightDip(IsMiniSessionChrome);
 
     public event Action? OpenManagerRequested;
     public event Action? QuitRequested;
@@ -285,7 +303,54 @@ public partial class OverlayViewModel : ObservableObject
             ActiveElapsedText = string.Empty;
         }
 
+        UpdateSessionChromeMode();
         RebindOpenNotesTarget();
+    }
+
+    /// <summary>Overlay Activated / GotFocus — expand to full compact chrome.</summary>
+    public void NotifyOverlayActivated()
+    {
+        IsOverlayFocused = true;
+        UpdateSessionChromeMode();
+    }
+
+    /// <summary>Overlay Deactivated / LostFocus — collapse to mini while a timer runs.</summary>
+    public void NotifyOverlayDeactivated()
+    {
+        IsOverlayFocused = false;
+        UpdateSessionChromeMode();
+    }
+
+    /// <summary>Click on the mini strip expands full chrome (window should also activate).</summary>
+    [RelayCommand]
+    private void ExpandSessionChrome()
+    {
+        IsOverlayFocused = true;
+        UpdateSessionChromeMode();
+    }
+
+    private void UpdateSessionChromeMode()
+    {
+        IsMiniSessionChrome = OverlaySessionChrome.ShouldShowMini(HasActiveTask, IsOverlayFocused);
+    }
+
+    partial void OnIsMiniSessionChromeChanged(bool value)
+    {
+        OnPropertyChanged(nameof(OverlayMinHeight));
+        if (!value)
+        {
+            return;
+        }
+
+        // Mini strip is title + elapsed + pause only — fold secondary panels.
+        if (NotePopoverOpen)
+        {
+            CloseNotes();
+        }
+
+        SearchOpen = false;
+        OpacityPanelOpen = false;
+        ShowSleeping = false;
     }
 
     /// <summary>Updates the active-card elapsed clock without a full list refresh.</summary>

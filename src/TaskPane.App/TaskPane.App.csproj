@@ -13,8 +13,8 @@
     <Product>TaskPane</Product>
     <AssemblyTitle>TaskPane</AssemblyTitle>
     <Description>Offline-first Windows task overlay</Description>
-    <Version>0.7.1</Version>
-    <InformationalVersion>0.7.1-reminders</InformationalVersion>
+    <Version>0.7.2</Version>
+    <InformationalVersion>0.7.2-compact-session</InformationalVersion>
     <Company>TaskPane</Company>
     <Copyright>Copyright (c) TaskPane contributors</Copyright>
     <WindowsPackageType>None</WindowsPackageType>
