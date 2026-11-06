@@ -38,6 +38,7 @@ tests/
   TaskPane.Infrastructure.Tests/
 scripts/
   publish-win-x64.sh
+  pull-build-run.ps1     # Windows: pull main, stop app, publish, launch
 docs/
 ```
 
@@ -60,6 +61,20 @@ dotnet publish src/TaskPane.App/TaskPane.App.csproj -c Release -r win-x64 --self
 ```
 
 Copy the output folder to a user-writable location and run `TaskPane.exe`. **No admin rights** are required for normal use. v1 does **not** ship an installer or code signing; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LICENSE](LICENSE).
+
+## Local Windows pull → build → run
+
+On Windows 11 (PowerShell), from the repo root:
+
+```powershell
+.\scripts\pull-build-run.ps1
+# optional workplace wordmark for this build only:
+.\scripts\pull-build-run.ps1 -AppDisplayName YourWorkplaceName
+# rebuild/launch without pulling:
+.\scripts\pull-build-run.ps1 -SkipPull
+```
+
+The script checks out `main`, `git pull --ff-only`, stops any running `TaskPane` process, publishes self-contained win-x64 Release to `artifacts/publish/win-x64` (same layout as `publish-win-x64.sh`), then launches `TaskPane.exe`. Pass `-AppDisplayName` only when you want a build-time branding override; the public default stays **TaskPane**.
 
 ## Shipping notes (Phase 7)
 
