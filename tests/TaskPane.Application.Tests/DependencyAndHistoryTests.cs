@@ -364,6 +364,58 @@ public sealed class DependencyAndHistoryTests
     }
 
     [Fact]
+    public async Task Undo_completion_notifies_workspace_and_restores_overlay_visibility()
+    {
+        var harness = CreateHarness();
+        var task = await harness.Tasks.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Visible again",
+            FocusBucket = FocusBucket.Inbox
+        });
+
+        await harness.Tasks.CompleteAsync(task.Id, null);
+        var afterComplete = await harness.Tasks.QueryRootsAsync(new TaskQuery
+        {
+            FocusBucket = FocusBucket.Inbox,
+            OverlayVisibility = true
+        });
+        Assert.DoesNotContain(afterComplete, t => t.Id.Equals(task.Id));
+
+        var notifyCount = 0;
+        harness.Workspace.TasksChanged += () => notifyCount++;
+
+        await harness.History.UndoLatestAsync();
+
+        Assert.Equal(1, notifyCount);
+        Assert.False((await harness.Tasks.GetAsync(task.Id))!.IsCompleted);
+
+        var afterUndo = await harness.Tasks.QueryRootsAsync(new TaskQuery
+        {
+            FocusBucket = FocusBucket.Inbox,
+            OverlayVisibility = true
+        });
+        Assert.Contains(afterUndo, t => t.Id.Equals(task.Id));
+    }
+
+    [Fact]
+    public async Task Restore_batch_notifies_workspace()
+    {
+        var harness = CreateHarness();
+        var task = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Bin" });
+        await harness.Tasks.SoftDeleteAsync(task.Id);
+        var batchId = (await harness.Tasks.GetAsync(task.Id))!.DeletionBatchId
+                      ?? throw new InvalidOperationException("Expected deletion batch.");
+
+        var notifyCount = 0;
+        harness.Workspace.TasksChanged += () => notifyCount++;
+
+        await harness.Tasks.RestoreBatchAsync(batchId);
+
+        Assert.Equal(1, notifyCount);
+        Assert.False((await harness.Tasks.GetAsync(task.Id))!.IsDeleted);
+    }
+
+    [Fact]
     public async Task Recycle_bin_entries_warn_on_deleted_predecessors()
     {
         var harness = CreateHarness();
@@ -428,6 +480,7 @@ public sealed class DependencyAndHistoryTests
         var uow = new PassthroughUnitOfWork();
         var sessions = new InMemoryTimeSessionRepository();
         var settings = new InMemorySettingsRepository();
+        var workspace = new TaskWorkspaceNotifier();
         var clock = new FixedClock(utcNow ?? DateTimeOffset.Parse("2026-11-04T12:00:00Z"));
         var focus = new FocusService(tasks, tags, deps);
         var time = new TimeTrackingService(
@@ -437,7 +490,14 @@ public sealed class DependencyAndHistoryTests
             uow,
             clock,
             NullLogger<TimeTrackingService>.Instance);
-        var history = new HistoryService(audit, tasks, deps, tags, uow, NullLogger<HistoryService>.Instance);
+        var history = new HistoryService(
+            audit,
+            tasks,
+            deps,
+            tags,
+            uow,
+            NullLogger<HistoryService>.Instance,
+            workspace);
         var dependencies = new DependencyService(
             deps,
             tasks,
@@ -464,8 +524,20 @@ public sealed class DependencyAndHistoryTests
             time,
             history,
             recurrence,
-            NullLogger<TaskService>.Instance);
-        return new Harness(taskService, dependencies, history, time, deps, tags, organization, audit, recurrence, tasks);
+            NullLogger<TaskService>.Instance,
+            workspace);
+        return new Harness(
+            taskService,
+            dependencies,
+            history,
+            time,
+            deps,
+            tags,
+            organization,
+            audit,
+            recurrence,
+            tasks,
+            workspace);
     }
 
     private sealed record Harness(
@@ -478,7 +550,8 @@ public sealed class DependencyAndHistoryTests
         OrganizationService Organization,
         InMemoryAuditRepository Audit,
         RecurrenceService Recurrence,
-        InMemoryTaskRepository TaskRepo);
+        InMemoryTaskRepository TaskRepo,
+        TaskWorkspaceNotifier Workspace);
 
     private sealed class FixedClock(DateTimeOffset utcNow) : IClock
     {

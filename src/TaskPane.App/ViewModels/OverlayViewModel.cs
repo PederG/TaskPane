@@ -21,6 +21,7 @@ public partial class OverlayViewModel : ObservableObject
     private readonly AppSettingsService _appSettings;
     private readonly TimeTrackingService _timeTracking;
     private readonly DependencyService _dependencies;
+    private readonly TaskWorkspaceNotifier _workspace;
     private readonly NotesDraftCache _noteDrafts = new();
     private readonly HashSet<TaskId> _expanded = [];
     private DateTimeOffset? _activeStartedUtc;
@@ -32,14 +33,21 @@ public partial class OverlayViewModel : ObservableObject
         OverlaySettingsService overlaySettings,
         AppSettingsService appSettings,
         TimeTrackingService timeTracking,
-        DependencyService dependencies)
+        DependencyService dependencies,
+        TaskWorkspaceNotifier workspace)
     {
         _taskService = taskService;
         _overlaySettings = overlaySettings;
         _appSettings = appSettings;
         _timeTracking = timeTracking;
         _dependencies = dependencies;
+        _workspace = workspace;
+        // History undo / recycle restore (and similar) mutate tasks from the manager;
+        // refresh immediately so the overlay does not stay stale until pause/focus.
+        _workspace.TasksChanged += OnWorkspaceTasksChanged;
     }
+
+    private void OnWorkspaceTasksChanged() => _ = RefreshAsync();
 
     public ObservableCollection<TaskRowViewModel> VisibleTasks { get; } = [];
     public ObservableCollection<TaskRowViewModel> SleepingTasks { get; } = [];
