@@ -2,6 +2,12 @@
 
 All notable TaskPane releases are recorded here.
 
+## 0.7.2 — Compact overlay while timer runs
+
+- While a time session is active and the overlay is unfocused, chrome collapses to a smaller always-on-top mini strip (active title + elapsed + pause) — not tray minimize.
+- Activate / focus (or click the mini strip) expands back to the full compact overlay; stopping the timer expands even if unfocused.
+- `SetWindowRgn` refreshed on mini ↔ full size changes; rounded corners, opacity, Topmost, and dark overlay design preserved. DigiFokus via `AppDisplayName` only.
+
 ## 0.7.1 — Reminder toast improvements
 
 - Win11 toast delivery where supported (unpackaged self-contained WPF); tray + in-app Open/Snooze/Dismiss fallback.

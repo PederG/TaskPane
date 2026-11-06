@@ -12,7 +12,7 @@
         ShowInTaskbar="False"
         SizeToContent="Height"
         MinWidth="300"
-        MinHeight="200"
+        MinHeight="{Binding OverlayMinHeight}"
         MaxWidth="900"
         MaxHeight="{Binding MaxContentHeight}"
         Width="340"
@@ -23,6 +23,8 @@
         SourceInitialized="OverlayWindow_OnSourceInitialized"
         LocationChanged="OverlayWindow_OnPlacementChanged"
         SizeChanged="OverlayWindow_OnPlacementChanged"
+        Activated="OverlayWindow_OnActivated"
+        Deactivated="OverlayWindow_OnDeactivated"
         Loaded="OverlayWindow_OnLoaded">
   <!--
     Layered host (AllowsTransparency): CompositionTarget.BackgroundColor must be Transparent
@@ -41,6 +43,10 @@
     ≈ TpOverlayPad (14 DIP) is HTCAPTION for empty padding drag (not over Search/Expand/More;
     respects position-locked). Corner hit squares (16 DIP) win over 6 DIP edge strips so
     HTBOTTOMRIGHT stays reachable on the rounded silhouette. DragHeader still DragMove.
+    Running-session mini chrome: while a timer is active and the overlay is not focused,
+    FullChrome collapses and MiniSessionStrip shows (title + elapsed + pause). Activate /
+    GotFocus / strip click expands back. Stop with no focus expands (not tray minimize).
+    SetWindowRgn reapplied on IsMiniSessionChrome size changes.
   -->
   <Window.Template>
     <ControlTemplate TargetType="Window">
@@ -61,7 +67,53 @@
           Padding="{StaticResource TpOverlayPadThickness}"
           SnapsToDevicePixels="True"
           SizeChanged="RootSurface_OnSizeChanged">
-    <DockPanel LastChildFill="True">
+    <Grid>
+    <!-- Mini strip while timer runs and overlay is unfocused (always-on-top, not tray). -->
+    <Border x:Name="MiniSessionStrip"
+            Background="Transparent"
+            Visibility="{Binding IsMiniSessionChrome, Converter={StaticResource BoolToVis}}"
+            MouseLeftButtonDown="MiniSessionStrip_OnMouseLeftButtonDown"
+            AutomationProperties.Name="Active session mini overlay">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <ui:SymbolIcon Symbol="ReOrderDotsVertical24"
+                       FontSize="14"
+                       Foreground="{StaticResource TpOverlayMetaBrush}"
+                       Margin="0,0,8,0"
+                       VerticalAlignment="Center" />
+        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0">
+          <TextBlock Text="{Binding ActiveTaskTitle}"
+                     Style="{StaticResource TpOverlayActiveTitle}"
+                     TextTrimming="CharacterEllipsis"
+                     ToolTip="Click to expand overlay" />
+          <TextBlock Text="{Binding ActiveElapsedText}"
+                     FontSize="12"
+                     Foreground="{StaticResource TpOverlayMutedBrush}"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <Button x:Name="MiniPauseButton"
+                Grid.Column="2"
+                Style="{StaticResource TpOverlayIconButton}"
+                Width="36"
+                Height="36"
+                VerticalAlignment="Center"
+                Command="{Binding PauseActiveCommand}"
+                ToolTip="Pause timer"
+                AutomationProperties.Name="Pause active timer">
+          <ui:SymbolIcon Symbol="Pause24"
+                         FontSize="14"
+                         Foreground="{StaticResource TpOverlayTextBrush}" />
+        </Button>
+      </Grid>
+    </Border>
+
+    <DockPanel x:Name="FullChrome"
+               LastChildFill="True"
+               Visibility="{Binding IsMiniSessionChrome, Converter={StaticResource InverseBoolToVis}}">
 
       <!-- Header: drag + logo + wordmark + actions -->
       <Border x:Name="DragHeader"
@@ -706,5 +758,6 @@
         </ListBox.ItemTemplate>
       </ListBox>
     </DockPanel>
+    </Grid>
   </Border>
 </Window>
