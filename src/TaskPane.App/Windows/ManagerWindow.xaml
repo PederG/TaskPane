@@ -369,9 +369,9 @@
                 </ListBox.ItemTemplate>
               </ListBox>
 
-              <DockPanel>
-                <DockPanel.Style>
-                  <Style TargetType="DockPanel">
+              <ScrollViewer>
+                <ScrollViewer.Style>
+                  <Style TargetType="ScrollViewer">
                     <Setter Property="Visibility" Value="Collapsed" />
                     <Style.Triggers>
                       <DataTrigger Binding="{Binding ShowingReports}" Value="True">
@@ -379,19 +379,118 @@
                       </DataTrigger>
                     </Style.Triggers>
                   </Style>
-                </DockPanel.Style>
-                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                  <TextBlock Text="{Binding ReportSummary}" TextWrapping="Wrap" Margin="0,0,0,8" />
-                  <ui:Button Content="Refresh reports"
-                             Appearance="Primary"
-                             HorizontalAlignment="Left"
-                             Padding="12,6"
-                             Command="{Binding RefreshReportCommand}" />
+                </ScrollViewer.Style>
+                <StackPanel Margin="0,0,8,0">
+                  <DockPanel Margin="0,0,0,12" LastChildFill="False">
+                    <TextBlock DockPanel.Dock="Left"
+                               Text="Time reports"
+                               FontWeight="SemiBold"
+                               FontSize="16"
+                               VerticalAlignment="Center" />
+                    <ui:Button DockPanel.Dock="Right"
+                               Content="Refresh"
+                               Appearance="Primary"
+                               Padding="12,6"
+                               Command="{Binding RefreshReportCommand}"
+                               AutomationProperties.Name="Refresh reports" />
+                  </DockPanel>
+                  <TextBlock Text="{Binding ReportSummary}"
+                             TextWrapping="Wrap"
+                             Opacity="0.8"
+                             Margin="0,0,0,16"
+                             AutomationProperties.Name="Report summary" />
+
+                  <TextBlock Text="{Binding TodayReportTotalText}"
+                             FontWeight="SemiBold"
+                             Margin="0,0,0,8"
+                             AutomationProperties.Name="Today report total" />
+                  <TextBlock Text="No tracked time today."
+                             Opacity="0.65"
+                             Margin="0,0,0,16"
+                             Visibility="{Binding HasTodayReportBars, Converter={StaticResource InverseBoolToVis}}" />
+                  <ItemsControl ItemsSource="{Binding TodayReportBars}"
+                                Margin="0,0,0,20"
+                                Visibility="{Binding HasTodayReportBars, Converter={StaticResource BoolToVis}}"
+                                AutomationProperties.Name="Today activity chart">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Grid Margin="0,0,0,10">
+                          <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                          </Grid.RowDefinitions>
+                          <DockPanel Grid.Row="0" Margin="0,0,0,4" LastChildFill="True">
+                            <TextBlock DockPanel.Dock="Right"
+                                       Text="{Binding DurationText}"
+                                       Margin="12,0,0,0"
+                                       Opacity="0.75"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Title}"
+                                       TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center"
+                                       ToolTip="{Binding Title}" />
+                          </DockPanel>
+                          <ProgressBar Grid.Row="1"
+                                       Minimum="0"
+                                       Maximum="1"
+                                       Value="{Binding Share}"
+                                       Height="10"
+                                       IsTabStop="False"
+                                       AutomationProperties.Name="{Binding Title}" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+
+                  <TextBlock Text="{Binding WeekReportTotalText}"
+                             FontWeight="SemiBold"
+                             Margin="0,0,0,8"
+                             AutomationProperties.Name="Week report total" />
+                  <TextBlock Text="No tracked time this week."
+                             Opacity="0.65"
+                             Margin="0,0,0,16"
+                             Visibility="{Binding HasWeekReportBars, Converter={StaticResource InverseBoolToVis}}" />
+                  <ItemsControl ItemsSource="{Binding WeekReportBars}"
+                                Margin="0,0,0,20"
+                                Visibility="{Binding HasWeekReportBars, Converter={StaticResource BoolToVis}}"
+                                AutomationProperties.Name="Week activity chart">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Grid Margin="0,0,0,10">
+                          <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                          </Grid.RowDefinitions>
+                          <DockPanel Grid.Row="0" Margin="0,0,0,4" LastChildFill="True">
+                            <TextBlock DockPanel.Dock="Right"
+                                       Text="{Binding DurationText}"
+                                       Margin="12,0,0,0"
+                                       Opacity="0.75"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Title}"
+                                       TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center"
+                                       ToolTip="{Binding Title}" />
+                          </DockPanel>
+                          <ProgressBar Grid.Row="1"
+                                       Minimum="0"
+                                       Maximum="1"
+                                       Value="{Binding Share}"
+                                       Height="10"
+                                       IsTabStop="False"
+                                       AutomationProperties.Name="{Binding Title}" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+
+                  <TextBlock Style="{StaticResource TpSectionLabel}" Text="DETAILS" Margin="0,0,0,8" />
+                  <ListBox ItemsSource="{Binding ReportLines}"
+                           BorderThickness="0"
+                           Background="Transparent"
+                           AutomationProperties.Name="Report detail lines" />
                 </StackPanel>
-                <ListBox ItemsSource="{Binding ReportLines}"
-                         BorderThickness="0"
-                         Background="Transparent" />
-              </DockPanel>
+              </ScrollViewer>
             </DockPanel>
           </Border>
 
@@ -680,9 +779,24 @@
                   </WrapPanel>
 
                   <TextBlock Style="{StaticResource TpSectionLabel}" Text="TIME REPORTS" />
-                  <TextBlock Text="{Binding ReportSummary}" Margin="0,0,0,8" />
+                  <TextBlock Text="{Binding ReportSummary}" Margin="0,0,0,8" TextWrapping="Wrap" />
                   <ui:Button Content="Refresh reports" Margin="0,0,0,8" Appearance="Secondary" HorizontalAlignment="Left"
                              Command="{Binding RefreshReportCommand}" />
+                  <TextBlock Text="{Binding TodayReportTotalText}" Margin="0,0,0,4" FontWeight="SemiBold"
+                             FontSize="12" Opacity="0.85" />
+                  <ItemsControl ItemsSource="{Binding TodayReportBars}" Margin="0,0,0,8"
+                                Visibility="{Binding HasTodayReportBars, Converter={StaticResource BoolToVis}}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <DockPanel Margin="0,0,0,6">
+                          <TextBlock DockPanel.Dock="Right" Text="{Binding DurationText}" Margin="8,0,0,0"
+                                     FontSize="11" Opacity="0.75" VerticalAlignment="Center" />
+                          <ProgressBar Minimum="0" Maximum="1" Value="{Binding Share}" Height="8"
+                                       IsTabStop="False" />
+                        </DockPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
                   <ListBox ItemsSource="{Binding ReportLines}" Height="100" Margin="0,0,0,16"
                            BorderThickness="0" Background="Transparent" />
 

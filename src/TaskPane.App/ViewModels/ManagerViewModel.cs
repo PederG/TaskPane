@@ -71,6 +71,8 @@ public partial class ManagerViewModel : ObservableObject
     public ObservableCollection<Tag> SelectedTags { get; } = [];
     public ObservableCollection<SessionRowViewModel> Sessions { get; } = [];
     public ObservableCollection<string> ReportLines { get; } = [];
+    public ObservableCollection<ReportChartRowViewModel> TodayReportBars { get; } = [];
+    public ObservableCollection<ReportChartRowViewModel> WeekReportBars { get; } = [];
     public ObservableCollection<DependencyLinkView> DependsOnLinks { get; } = [];
     public ObservableCollection<DependencyLinkView> BlocksLinks { get; } = [];
     public ObservableCollection<HistoryRowViewModel> HistoryRows { get; } = [];
@@ -218,6 +220,18 @@ public partial class ManagerViewModel : ObservableObject
 
     [ObservableProperty]
     private string _reportSummary = string.Empty;
+
+    [ObservableProperty]
+    private string _todayReportTotalText = string.Empty;
+
+    [ObservableProperty]
+    private string _weekReportTotalText = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasTodayReportBars;
+
+    [ObservableProperty]
+    private bool _hasWeekReportBars;
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
@@ -1548,8 +1562,25 @@ public partial class ManagerViewModel : ObservableObject
     {
         var today = await _timeTracking.GetTodayReportAsync(cancellationToken: cancellationToken).ConfigureAwait(true);
         var week = await _timeTracking.GetWeekReportAsync(cancellationToken: cancellationToken).ConfigureAwait(true);
+        TodayReportTotalText = $"{today.Label} · {SessionDuration.FormatCompact(today.Total)}";
+        WeekReportTotalText = $"{week.Label} · {SessionDuration.FormatCompact(week.Total)}";
         ReportSummary =
             $"{today.Label}: {SessionDuration.FormatCompact(today.Total)} · {week.Label}: {SessionDuration.FormatCompact(week.Total)}";
+        HasTodayReportBars = today.Rows.Count > 0 && today.Total > TimeSpan.Zero;
+        HasWeekReportBars = week.Rows.Count > 0 && week.Total > TimeSpan.Zero;
+
+        TodayReportBars.Clear();
+        foreach (var bar in ReportChartRowViewModel.FromReport(today))
+        {
+            TodayReportBars.Add(bar);
+        }
+
+        WeekReportBars.Clear();
+        foreach (var bar in ReportChartRowViewModel.FromReport(week))
+        {
+            WeekReportBars.Add(bar);
+        }
+
         ReportLines.Clear();
         ReportLines.Add($"— {today.Label} —");
         foreach (var row in today.Rows.Take(12))
