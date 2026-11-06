@@ -320,6 +320,77 @@ public sealed class TimeTrackingServiceTests
         Assert.Equal(ValidationCodes.InvalidSessionRange, ex.Code);
     }
 
+    [Fact]
+    public async Task Today_report_groups_by_task_and_clips_to_local_day()
+    {
+        var harness = CreateHarness();
+        var early = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Early" });
+        var late = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Late" });
+
+        // Fixed clock is 2026-11-04T08:00:00Z — sessions inside that UTC day.
+        await harness.Time.AddManualSessionAsync(new ManualSessionRequest
+        {
+            TaskId = early.Id,
+            StartedUtc = DateTimeOffset.Parse("2026-11-04T01:00:00Z"),
+            EndedUtc = DateTimeOffset.Parse("2026-11-04T01:40:00Z")
+        });
+        await harness.Time.AddManualSessionAsync(new ManualSessionRequest
+        {
+            TaskId = late.Id,
+            StartedUtc = DateTimeOffset.Parse("2026-11-04T06:00:00Z"),
+            EndedUtc = DateTimeOffset.Parse("2026-11-04T06:10:00Z")
+        });
+        // Outside today (previous day) — must not count.
+        await harness.Time.AddManualSessionAsync(new ManualSessionRequest
+        {
+            TaskId = early.Id,
+            StartedUtc = DateTimeOffset.Parse("2026-11-03T20:00:00Z"),
+            EndedUtc = DateTimeOffset.Parse("2026-11-03T22:00:00Z")
+        });
+
+        var report = await harness.Time.GetTodayReportAsync(TimeZoneInfo.Utc);
+        Assert.Equal("Today", report.Label);
+        Assert.Equal(TimeSpan.FromMinutes(50), report.Total);
+        Assert.Equal(2, report.Rows.Count);
+        Assert.Equal(early.Id, report.Rows[0].TaskId);
+        Assert.Equal(TimeSpan.FromMinutes(40), report.Rows[0].Direct);
+        Assert.Equal(late.Id, report.Rows[1].TaskId);
+        Assert.Equal(TimeSpan.FromMinutes(10), report.Rows[1].Direct);
+    }
+
+    [Fact]
+    public async Task Week_report_uses_monday_start_and_sums_across_days()
+    {
+        var harness = CreateHarness();
+        // 2026-11-04 is Wednesday; Monday start is 2026-11-02.
+        var task = await harness.Tasks.CreateAsync(new CreateTaskRequest { Title = "Week work" });
+        await harness.Time.AddManualSessionAsync(new ManualSessionRequest
+        {
+            TaskId = task.Id,
+            StartedUtc = DateTimeOffset.Parse("2026-11-02T10:00:00Z"),
+            EndedUtc = DateTimeOffset.Parse("2026-11-02T10:30:00Z")
+        });
+        await harness.Time.AddManualSessionAsync(new ManualSessionRequest
+        {
+            TaskId = task.Id,
+            StartedUtc = DateTimeOffset.Parse("2026-11-04T09:00:00Z"),
+            EndedUtc = DateTimeOffset.Parse("2026-11-04T09:15:00Z")
+        });
+        // Previous Sunday — outside Mon–Sun week.
+        await harness.Time.AddManualSessionAsync(new ManualSessionRequest
+        {
+            TaskId = task.Id,
+            StartedUtc = DateTimeOffset.Parse("2026-11-01T12:00:00Z"),
+            EndedUtc = DateTimeOffset.Parse("2026-11-01T13:00:00Z")
+        });
+
+        var report = await harness.Time.GetWeekReportAsync(TimeZoneInfo.Utc);
+        Assert.Equal("This week", report.Label);
+        Assert.Equal(TimeSpan.FromMinutes(45), report.Total);
+        Assert.Single(report.Rows);
+        Assert.Equal(TimeSpan.FromMinutes(45), report.Rows[0].Direct);
+    }
+
     private static Harness CreateHarness()
     {
         var tasks = new InMemoryTaskRepository();

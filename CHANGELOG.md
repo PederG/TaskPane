@@ -2,6 +2,11 @@
 
 All notable TaskPane releases are recorded here.
 
+## 0.7.6 — Reports charts
+
+- Manager Reports pane shows Fluent horizontal bar charts for today and this week (share of tracked time per task), plus totals and detail lines.
+- Compact chart preview also appears under task-detail TIME REPORTS. DigiFokus via `AppDisplayName` only.
+
 ## 0.7.5 — Assign project and block from task UI
 
 - Overlay task overflow: Project submenu (assign / clear) and Depends on… predecessor picker.
