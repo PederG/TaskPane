@@ -21,6 +21,7 @@ public sealed class TaskService
     private readonly TimeTrackingService _timeTracking;
     private readonly HistoryService _history;
     private readonly RecurrenceService _recurrence;
+    private readonly TaskWorkspaceNotifier _workspace;
     private readonly ILogger<TaskService> _logger;
 
     public TaskService(
@@ -32,7 +33,8 @@ public sealed class TaskService
         TimeTrackingService timeTracking,
         HistoryService history,
         RecurrenceService recurrence,
-        ILogger<TaskService> logger)
+        ILogger<TaskService> logger,
+        TaskWorkspaceNotifier? workspace = null)
     {
         _tasks = tasks;
         _tags = tags;
@@ -42,6 +44,7 @@ public sealed class TaskService
         _timeTracking = timeTracking;
         _history = history;
         _recurrence = recurrence;
+        _workspace = workspace ?? new TaskWorkspaceNotifier();
         _logger = logger;
     }
 
@@ -429,6 +432,8 @@ public sealed class TaskService
                 }
             }
         }, cancellationToken).ConfigureAwait(false);
+
+        _workspace.NotifyTasksChanged();
     }
 
     public async Task ReorderAsync(

@@ -26,6 +26,7 @@ public sealed class HistoryService
     private readonly IDependencyRepository _dependencies;
     private readonly ITagRepository _tags;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly TaskWorkspaceNotifier _workspace;
     private readonly ILogger<HistoryService> _logger;
 
     public HistoryService(
@@ -34,13 +35,15 @@ public sealed class HistoryService
         IDependencyRepository dependencies,
         ITagRepository tags,
         IUnitOfWork unitOfWork,
-        ILogger<HistoryService> logger)
+        ILogger<HistoryService> logger,
+        TaskWorkspaceNotifier? workspace = null)
     {
         _audit = audit;
         _tasks = tasks;
         _dependencies = dependencies;
         _tags = tags;
         _unitOfWork = unitOfWork;
+        _workspace = workspace ?? new TaskWorkspaceNotifier();
         _logger = logger;
     }
 
@@ -288,6 +291,8 @@ public sealed class HistoryService
             audit = fresh;
         }, cancellationToken).ConfigureAwait(false);
 
+        // Overlay (and any other listeners) must refresh without waiting for timer/focus UI.
+        _workspace.NotifyTasksChanged();
         _logger.LogInformation("Undid audit {AuditId} action={Action}", audit.Id, audit.Action);
         return audit;
     }

@@ -133,7 +133,13 @@ public partial class App : System.Windows.Application
             _modeController.ShowManager();
         };
         overlayVm.QuitRequested += QuitApplication;
-        managerVm.ReturnToOverlayRequested += () => _modeController.ShowOverlay();
+        managerVm.ReturnToOverlayRequested += () =>
+        {
+            // Manager mutations (complete/edit/etc.) may not all raise TasksChanged;
+            // always resync overlay when returning so lists match.
+            _ = overlayVm.RefreshCommand.ExecuteAsync(null);
+            _modeController.ShowOverlay();
+        };
         managerVm.HotkeyChanged += setting => _ = ApplyHotkeyAsync(setting);
         managerVm.AppSettingsChanged += settings =>
         {
