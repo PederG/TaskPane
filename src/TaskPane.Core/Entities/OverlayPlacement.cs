@@ -11,7 +11,6 @@ public sealed class OverlayPlacement
     /// <summary>Ceiling for auto-fit overlay height. Window sizes to content up to this value.</summary>
     public double MaxHeight { get; set; } = 720;
 
-    public double Opacity { get; set; } = 0.92;
     public bool Topmost { get; set; } = true;
     public bool PositionLocked { get; set; }
     public string? MonitorDeviceName { get; set; }

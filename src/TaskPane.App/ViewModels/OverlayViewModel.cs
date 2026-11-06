@@ -54,9 +54,6 @@ public partial class OverlayViewModel : ObservableObject
     private string _statusMessage = string.Empty;
 
     [ObservableProperty]
-    private double _opacity = 0.92;
-
-    [ObservableProperty]
     private bool _topmost = true;
 
     [ObservableProperty]
@@ -97,9 +94,6 @@ public partial class OverlayViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _searchOpen;
-
-    [ObservableProperty]
-    private bool _opacityPanelOpen;
 
     [ObservableProperty]
     private int _visibleTaskCount;
@@ -167,7 +161,6 @@ public partial class OverlayViewModel : ObservableObject
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         Placement = await _overlaySettings.GetAsync(cancellationToken).ConfigureAwait(true);
-        Opacity = Placement.Opacity;
         Topmost = Placement.Topmost;
         MaxContentHeight = Placement.MaxHeight > 0 ? Placement.MaxHeight : 720;
 
@@ -349,7 +342,6 @@ public partial class OverlayViewModel : ObservableObject
         }
 
         SearchOpen = false;
-        OpacityPanelOpen = false;
         ShowSleeping = false;
     }
 
@@ -430,9 +422,6 @@ public partial class OverlayViewModel : ObservableObject
             SearchText = string.Empty;
         }
     }
-
-    [RelayCommand]
-    private void ToggleOpacityPanel() => OpacityPanelOpen = !OpacityPanelOpen;
 
     [RelayCommand]
     private async Task QuickAddAsync()
@@ -845,17 +834,10 @@ public partial class OverlayViewModel : ObservableObject
 
     public async Task PersistPlacementAsync(OverlayPlacement placement, CancellationToken cancellationToken = default)
     {
-        placement.Opacity = Opacity;
         placement.Topmost = Topmost;
         placement.MaxHeight = MaxContentHeight;
         Placement = placement;
         await _overlaySettings.SaveAsync(placement, cancellationToken).ConfigureAwait(true);
-    }
-
-    partial void OnOpacityChanged(double value)
-    {
-        Placement.Opacity = value;
-        _ = _overlaySettings.SaveAsync(Placement);
     }
 
     partial void OnTopmostChanged(bool value)

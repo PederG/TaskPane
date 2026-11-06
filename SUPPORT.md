@@ -26,7 +26,7 @@ Mark each **Pass** only after executing on a real Windows 11 machine. Otherwise 
 |---|---|
 | Rounded overlay corners over contrasting wallpaper (no white triangles / DWM halo) | Not tested |
 | Overlay drag/resize (edges + corners); DPI 100/125/150; multi-monitor restore + missing-monitor clamp | Not tested |
-| Running-session mini overlay: unfocused + active timer → mini strip; focus/click expands; stop expands; corners/opacity/Topmost OK | Not tested |
+| Running-session mini overlay: unfocused + active timer → mini strip; focus/click expands; stop expands; corners/Topmost OK | Not tested |
 | Tasks/subtasks/sleep/notes/undo/recurrence/reminders end-to-end (overlay + manager) | Not tested |
 | Time tracking: sleep stops descendant timers; lock pause/resume; idle discard vs keep&resume; crash recovery | Not tested |
 | Persistence across tray quit/relaunch (tasks, sessions, placement) | Not tested |

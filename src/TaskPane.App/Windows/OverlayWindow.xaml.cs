@@ -13,7 +13,6 @@ using TaskPane.Core.Interop;
 using TaskPane.Core.Overlay;
 using TaskPane.Core.Placement;
 using MediaBrushes = System.Windows.Media.Brushes;
-using MediaColor = System.Windows.Media.Color;
 using WpfContextMenu = System.Windows.Controls.ContextMenu;
 using WpfMenuItem = System.Windows.Controls.MenuItem;
 using WpfPoint = System.Windows.Point;
@@ -57,8 +56,8 @@ public partial class OverlayWindow : Window
         _logger = logger;
         DataContext = viewModel;
         _viewModel.ConfirmParentCompletion = ConfirmParentCompletionAsync;
-        // Layered transparent host must stay fully opaque; content translucency is brush alpha
-        // on RootSurface (UIElement.Opacity composites against white on AllowsTransparency).
+        // Layered transparent host must stay fully opaque (Window.Opacity = 1). RootSurface
+        // uses solid theme brushes — no user opacity / brush-alpha scaling.
         Opacity = 1;
         Background = MediaBrushes.Transparent;
         // Flip to true locally for Windows QA (WPF border vs HWND #FFFFFF hairline). Do not ship true.
@@ -66,11 +65,6 @@ public partial class OverlayWindow : Window
 
         _viewModel.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName is nameof(OverlayViewModel.Opacity) or null)
-            {
-                ApplyRootSurfaceOpacity();
-            }
-
             // Mini ↔ full chrome changes RootSurface size; refresh SetWindowRgn clip.
             if (e.PropertyName is nameof(OverlayViewModel.IsMiniSessionChrome)
                 or nameof(OverlayViewModel.OverlayMinHeight)
@@ -153,38 +147,8 @@ public partial class OverlayWindow : Window
         }
 
         ApplyRootSurfaceClip();
-        ApplyRootSurfaceOpacity();
         // First show + layout: clip HWND to RootSurface round-rect (excludes white host corners).
         ScheduleNativeRoundedRegionUpdate();
-    }
-
-    /// <summary>
-    /// Apply user opacity by scaling RootSurface background/border brush alpha.
-    /// Do not set <see cref="UIElement.Opacity"/> — on AllowsTransparency + SetWindowRgn
-    /// that path often composites against white instead of showing the desktop.
-    /// </summary>
-    private void ApplyRootSurfaceOpacity()
-    {
-        var factor = _viewModel.Opacity;
-        if (TryFindResource("TpOverlayBgColor") is MediaColor bg)
-        {
-            RootSurface.Background = new SolidColorBrush(
-                MediaColor.FromArgb(
-                    OverlaySurfaceOpacity.ScaleAlpha(bg.A, factor),
-                    bg.R,
-                    bg.G,
-                    bg.B));
-        }
-
-        if (TryFindResource("TpOverlayBorderColor") is MediaColor border)
-        {
-            RootSurface.BorderBrush = new SolidColorBrush(
-                MediaColor.FromArgb(
-                    OverlaySurfaceOpacity.ScaleAlpha(border.A, factor),
-                    border.R,
-                    border.G,
-                    border.B));
-        }
     }
 
     private void OverlayWindow_OnDpiChanged(object sender, System.Windows.DpiChangedEventArgs e)
@@ -573,7 +537,6 @@ public partial class OverlayWindow : Window
             Width = Width,
             Height = height,
             MaxHeight = _viewModel.MaxContentHeight,
-            Opacity = _viewModel.Opacity,
             Topmost = _viewModel.Topmost,
             PositionLocked = _viewModel.Placement.PositionLocked,
             MonitorDeviceName = GetMonitorName()
@@ -586,7 +549,6 @@ public partial class OverlayWindow : Window
         Left = placement.Left;
         Top = placement.Top;
         Width = placement.Width;
-        _viewModel.Opacity = placement.Opacity;
         _viewModel.Topmost = placement.Topmost;
         _viewModel.MaxContentHeight = placement.MaxHeight > 0 ? placement.MaxHeight : 720;
         MaxHeight = _viewModel.MaxContentHeight;
