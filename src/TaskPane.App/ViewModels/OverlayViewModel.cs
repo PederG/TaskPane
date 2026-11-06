@@ -6,6 +6,7 @@ using TaskPane.Application.Services;
 using TaskPane.Core.Branding;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
+using TaskPane.Core.Errors;
 using TaskPane.Core.Ids;
 using TaskPane.Core.Notes;
 using TaskPane.Core.Overlay;
@@ -21,9 +22,11 @@ public partial class OverlayViewModel : ObservableObject
     private readonly AppSettingsService _appSettings;
     private readonly TimeTrackingService _timeTracking;
     private readonly DependencyService _dependencies;
+    private readonly OrganizationService _organization;
     private readonly TaskWorkspaceNotifier _workspace;
     private readonly NotesDraftCache _noteDrafts = new();
     private readonly HashSet<TaskId> _expanded = [];
+    private readonly Dictionary<ProjectId, string> _projectNames = new();
     private DateTimeOffset? _activeStartedUtc;
     private TaskId? _activeTaskId;
     private TaskId? _noteTaskId;
@@ -34,6 +37,7 @@ public partial class OverlayViewModel : ObservableObject
         AppSettingsService appSettings,
         TimeTrackingService timeTracking,
         DependencyService dependencies,
+        OrganizationService organization,
         TaskWorkspaceNotifier workspace)
     {
         _taskService = taskService;
@@ -41,6 +45,7 @@ public partial class OverlayViewModel : ObservableObject
         _appSettings = appSettings;
         _timeTracking = timeTracking;
         _dependencies = dependencies;
+        _organization = organization;
         _workspace = workspace;
         // History undo / recycle restore (and similar) mutate tasks from the manager;
         // refresh immediately so the overlay does not stay stale until pause/focus.
@@ -51,6 +56,7 @@ public partial class OverlayViewModel : ObservableObject
 
     public ObservableCollection<TaskRowViewModel> VisibleTasks { get; } = [];
     public ObservableCollection<TaskRowViewModel> SleepingTasks { get; } = [];
+    public ObservableCollection<Project> Projects { get; } = [];
 
     [ObservableProperty]
     private string _quickAddText = string.Empty;
@@ -160,6 +166,12 @@ public partial class OverlayViewModel : ObservableObject
     /// <summary>Shows a custom sleep-until picker; return null to cancel.</summary>
     public Func<TaskRowViewModel, DateTimeOffset?>? PromptCustomSleepUntil { get; set; }
 
+    /// <summary>
+    /// Pick a predecessor task for a required dependency (blocks the successor until done).
+    /// Return null to cancel.
+    /// </summary>
+    public Func<TaskRowViewModel, IReadOnlyList<TaskRowViewModel>, TaskId?>? PromptPredecessor { get; set; }
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         Placement = await _overlaySettings.GetAsync(cancellationToken).ConfigureAwait(true);
@@ -174,10 +186,26 @@ public partial class OverlayViewModel : ObservableObject
         await RefreshAsync(cancellationToken).ConfigureAwait(true);
     }
 
+    private async Task LoadProjectsAsync(CancellationToken cancellationToken)
+    {
+        Projects.Clear();
+        _projectNames.Clear();
+        foreach (var project in await _organization.ListProjectsAsync(cancellationToken: cancellationToken)
+                     .ConfigureAwait(true))
+        {
+            Projects.Add(project);
+            _projectNames[project.Id] = project.Name;
+        }
+    }
+
+    private string? ResolveProjectName(ProjectId? projectId)
+        => projectId is { } id && _projectNames.TryGetValue(id, out var name) ? name : null;
+
     [RelayCommand]
     private async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         var active = await _timeTracking.GetActiveSessionAsync(cancellationToken).ConfigureAwait(true);
+        await LoadProjectsAsync(cancellationToken).ConfigureAwait(true);
         // Compact overlay lists every non-slept task across Inbox/Today/Next/Someday.
         // Focus buckets remain a manager-only organization; sleep still hides from this list.
         var query = new TaskQuery
@@ -202,7 +230,11 @@ public partial class OverlayViewModel : ObservableObject
         {
             var progress = await _taskService.GetProgressAsync(root.Id, cancellationToken).ConfigureAwait(true);
             var expanded = _expanded.Contains(root.Id);
-            var row = new TaskRowViewModel(root, progress, expanded);
+            var row = new TaskRowViewModel(
+                root,
+                progress,
+                expanded,
+                projectName: ResolveProjectName(root.ProjectId));
             await ApplyTimeAsync(row, active, cancellationToken).ConfigureAwait(true);
             if (blockedMap.TryGetValue(root.Id, out var state))
             {
@@ -238,7 +270,9 @@ public partial class OverlayViewModel : ObservableObject
                 .ToHashSet();
             foreach (var child in FocusService.OrderForOverlay(children, childBlockedIds))
             {
-                var childRow = new TaskRowViewModel(child);
+                var childRow = new TaskRowViewModel(
+                    child,
+                    projectName: ResolveProjectName(child.ProjectId));
                 await ApplyTimeAsync(childRow, active, cancellationToken).ConfigureAwait(true);
                 if (childBlocked.TryGetValue(child.Id, out var childState))
                 {
@@ -559,6 +593,86 @@ public partial class OverlayViewModel : ObservableObject
         StatusMessage = "Task woken.";
         await RefreshAsync().ConfigureAwait(true);
     }
+
+    /// <summary>Assign or clear the task's project from the overlay overflow menu.</summary>
+    public async Task AssignProjectAsync(TaskRowViewModel? row, ProjectId? projectId)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        if (projectId is { } id && row.ProjectId is { } current && current.Equals(id))
+        {
+            return;
+        }
+
+        if (projectId is null && row.ProjectId is null)
+        {
+            return;
+        }
+
+        await _taskService.UpdateAsync(BuildUpdateRequest(row, projectId)).ConfigureAwait(true);
+        StatusMessage = projectId is null
+            ? "Project cleared."
+            : $"Assigned to {ResolveProjectName(projectId) ?? "project"}.";
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Add a required predecessor (blocks this task until the predecessor completes).
+    /// Opens <see cref="PromptPredecessor"/> when set.
+    /// </summary>
+    public async Task AddBlockAsync(TaskRowViewModel? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        var candidates = VisibleTasks
+            .Where(t => !t.Id.Equals(row.Id) && !t.IsCompleted)
+            .ToList();
+        if (candidates.Count == 0)
+        {
+            StatusMessage = "No other tasks available to block on.";
+            return;
+        }
+
+        var predecessorId = PromptPredecessor?.Invoke(row, candidates);
+        if (predecessorId is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _dependencies.AddRequiredAsync(predecessorId.Value, row.Id).ConfigureAwait(true);
+            var title = candidates.FirstOrDefault(c => c.Id.Equals(predecessorId.Value))?.Title
+                        ?? "predecessor";
+            StatusMessage = $"Blocked on “{title}”.";
+            await RefreshAsync().ConfigureAwait(true);
+        }
+        catch (BusinessException ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    private static UpdateTaskRequest BuildUpdateRequest(TaskRowViewModel row, ProjectId? projectId)
+        => new()
+        {
+            Id = row.Id,
+            Title = row.Title,
+            Notes = row.Notes,
+            Priority = row.Priority,
+            FocusBucket = row.FocusBucket,
+            DeadlineLocalDate = row.DeadlineLocalDate,
+            DeadlineLocalTime = row.DeadlineLocalTime,
+            WaitingFor = row.WaitingFor,
+            WaitingFollowUpUtc = row.WaitingFollowUpUtc,
+            ProjectId = projectId
+        };
 
     /// <summary>
     /// Overlay auto-wake: when a timed sleep has expired, refresh so the task reappears

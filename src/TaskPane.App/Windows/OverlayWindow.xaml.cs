@@ -9,6 +9,7 @@ using TaskPane.App.Services;
 using TaskPane.App.ViewModels;
 using TaskPane.Core.Entities;
 using TaskPane.Core.Enums;
+using TaskPane.Core.Ids;
 using TaskPane.Core.Interop;
 using TaskPane.Core.Overlay;
 using TaskPane.Core.Placement;
@@ -86,6 +87,7 @@ public partial class OverlayWindow : Window
         };
         _elapsedTimer.Start();
         _viewModel.PromptCustomSleepUntil = PromptCustomSleepUntil;
+        _viewModel.PromptPredecessor = PromptPredecessor;
 
         DpiChanged += OverlayWindow_OnDpiChanged;
     }
@@ -775,6 +777,87 @@ public partial class OverlayWindow : Window
             Owner = this
         };
         return dialog.ShowDialog() == true ? dialog.SelectedUntilUtc : null;
+    }
+
+    private TaskId? PromptPredecessor(TaskRowViewModel row, IReadOnlyList<TaskRowViewModel> candidates)
+    {
+        var items = candidates
+            .Select(c => new TaskPickerItem { Id = c.Id, Title = c.Title })
+            .ToList();
+        var dialog = new TaskPickerDialog(
+            title: "Depends on",
+            prompt: $"Choose a task that must finish before “{row.Title}” can proceed.",
+            items: items)
+        {
+            Owner = this
+        };
+        return dialog.ShowDialog() == true ? dialog.SelectedItem?.Id : null;
+    }
+
+    private void TaskMenuProject_OnSubmenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not WpfMenuItem projectRoot || !TryGetRow(sender, out var row))
+        {
+            return;
+        }
+
+        projectRoot.Items.Clear();
+        var none = new WpfMenuItem
+        {
+            Header = "(No project)",
+            IsChecked = row.ProjectId is null,
+            IsCheckable = true,
+            Tag = null
+        };
+        none.Click += TaskMenuAssignProject_OnClick;
+        projectRoot.Items.Add(none);
+
+        if (_viewModel.Projects.Count == 0)
+        {
+            projectRoot.Items.Add(new WpfMenuItem
+            {
+                Header = "No projects yet — create one in Manager",
+                IsEnabled = false
+            });
+            return;
+        }
+
+        foreach (var project in _viewModel.Projects.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            var item = new WpfMenuItem
+            {
+                Header = project.Name,
+                IsCheckable = true,
+                IsChecked = row.ProjectId is { } pid && pid.Equals(project.Id),
+                Tag = project.Id
+            };
+            item.Click += TaskMenuAssignProject_OnClick;
+            projectRoot.Items.Add(item);
+        }
+    }
+
+    private void TaskMenuAssignProject_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetRow(sender, out var row))
+        {
+            return;
+        }
+
+        ProjectId? projectId = null;
+        if (sender is WpfMenuItem { Tag: ProjectId tagged })
+        {
+            projectId = tagged;
+        }
+
+        _ = _viewModel.AssignProjectAsync(row, projectId);
+    }
+
+    private void TaskMenuAddBlock_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (TryGetRow(sender, out var row))
+        {
+            _ = _viewModel.AddBlockAsync(row);
+        }
     }
 
     private void TaskMenuAddSubtask_OnClick(object sender, RoutedEventArgs e)

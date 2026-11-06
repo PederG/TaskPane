@@ -707,6 +707,12 @@
                         </Style>
                       </MenuItem.Style>
                     </MenuItem>
+                    <MenuItem x:Name="TaskMenuProjectRoot"
+                              Header="Project"
+                              SubmenuOpened="TaskMenuProject_OnSubmenuOpened" />
+                    <MenuItem Header="Depends on…"
+                              Click="TaskMenuAddBlock_OnClick"
+                              ToolTip="Add a required predecessor that blocks this task" />
                     <MenuItem Header="Expand / collapse"
                               Click="TaskMenuExpand_OnClick" />
                     <MenuItem Header="Notes"
