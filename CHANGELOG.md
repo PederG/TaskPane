@@ -2,11 +2,16 @@
 
 All notable TaskPane releases are recorded here.
 
+## 0.7.3 — Remove overlay opacity controls
+
+- Removed overlay opacity menu/slider, ViewModel state, and RootSurface brush-alpha path; chrome stays solid at design alpha.
+- Legacy `opacity` inside `overlay.placement` JSON is ignored on load and dropped on the next save (no Settings-row delete / schema wipe). DigiFokus via `AppDisplayName` only.
+
 ## 0.7.2 — Compact overlay while timer runs
 
 - While a time session is active and the overlay is unfocused, chrome collapses to a smaller always-on-top mini strip (active title + elapsed + pause) — not tray minimize.
 - Activate / focus (or click the mini strip) expands back to the full compact overlay; stopping the timer expands even if unfocused.
-- `SetWindowRgn` refreshed on mini ↔ full size changes; rounded corners, opacity, Topmost, and dark overlay design preserved. DigiFokus via `AppDisplayName` only.
+- `SetWindowRgn` refreshed on mini ↔ full size changes; rounded corners, Topmost, and dark overlay design preserved. DigiFokus via `AppDisplayName` only.
 
 ## 0.7.1 — Reminder toast improvements
 

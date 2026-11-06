@@ -29,8 +29,8 @@
   <!--
     Layered host (AllowsTransparency): CompositionTarget.BackgroundColor must be Transparent
     in code — WPF defaults it to white and that paints opaque rectangular corners behind the
-    rounded RootSurface. Opacity stays off the Window (must remain 1); translucency is
-    brush-alpha on RootSurface (not UIElement.Opacity — that whites out on layered hosts).
+    rounded RootSurface. Window.Opacity stays 1; RootSurface uses solid theme brushes
+    (no user opacity / brush-alpha path — mini-strip covers see-through needs).
     No visible ResizeGrip — edge/corner resize via WM_NCHITTEST.
     Style={x:Null} opts out of WPF-UI's implicit Window style (opaque WindowBackground /
     ClientAreaBorder template) so the compact overlay keeps a transparent rectangular HWND.
@@ -58,7 +58,7 @@
     </ControlTemplate>
   </Window.Template>
 
-  <!-- Background/BorderBrush alpha applied in code from Opacity (see ApplyRootSurfaceOpacity). -->
+  <!-- Solid overlay chrome (theme brushes at full design alpha). -->
   <Border x:Name="RootSurface"
           Background="{StaticResource TpOverlayBgBrush}"
           BorderBrush="{StaticResource TpOverlayBorderBrush}"
@@ -181,8 +181,6 @@
                   <MenuItem Header="Always on top"
                             IsCheckable="True"
                             IsChecked="{Binding Topmost}" />
-                  <MenuItem Header="Opacity…"
-                            Command="{Binding ToggleOpacityPanelCommand}" />
                   <Separator />
                   <MenuItem Header="Open manager"
                             Command="{Binding OpenManagerCommand}" />
@@ -228,28 +226,6 @@
         <ui:TextBox PlaceholderText="Search tasks…"
                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                     AutomationProperties.Name="Search overlay tasks" />
-      </Border>
-
-      <!-- Optional opacity (not permanent chrome) -->
-      <Border DockPanel.Dock="Top"
-              Background="{StaticResource TpOverlayCardBrush}"
-              CornerRadius="{StaticResource TpOverlayControlRadius}"
-              Padding="10,8"
-              Margin="0,0,0,10"
-              Visibility="{Binding OpacityPanelOpen, Converter={StaticResource BoolToVis}}">
-        <DockPanel>
-          <TextBlock Text="Opacity"
-                     Style="{StaticResource TpOverlayMetaText}"
-                     Margin="0,0,10,0"
-                     VerticalAlignment="Center" />
-          <Slider Minimum="0.45"
-                  Maximum="1"
-                  TickFrequency="0.05"
-                  IsSnapToTickEnabled="True"
-                  VerticalAlignment="Center"
-                  Value="{Binding Opacity}"
-                  AutomationProperties.Name="Overlay opacity" />
-        </DockPanel>
       </Border>
 
       <!-- Footer -->

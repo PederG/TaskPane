@@ -8,6 +8,7 @@ using TaskPane.Core.Ids;
 using TaskPane.Infrastructure.DependencyInjection;
 using TaskPane.Infrastructure.Migrations;
 using TaskPane.Infrastructure.Paths;
+using TaskPane.Infrastructure.Sqlite;
 using SessionEndReason = TaskPane.Core.Enums.SessionEndReason;
 
 namespace TaskPane.Infrastructure.Tests;
@@ -47,7 +48,6 @@ public sealed class SqlitePersistenceTests
                     Top = 140,
                     Width = 400,
                     Height = 500,
-                    Opacity = 0.8,
                     Topmost = true
                 });
             }
@@ -67,7 +67,7 @@ public sealed class SqlitePersistenceTests
 
                 var placement = await host2.GetRequiredService<OverlaySettingsService>().GetAsync();
                 Assert.Equal(120, placement.Left);
-                Assert.Equal(0.8, placement.Opacity);
+                Assert.True(placement.Topmost);
 
                 Assert.StartsWith(root, dbPath, StringComparison.OrdinalIgnoreCase);
                 Assert.DoesNotContain("Documents", dbPath, StringComparison.OrdinalIgnoreCase);
@@ -83,6 +83,42 @@ public sealed class SqlitePersistenceTests
             {
                 // best effort cleanup
             }
+        }
+    }
+
+    [Fact]
+    public async Task Legacy_overlay_opacity_json_is_ignored_and_dropped_on_save()
+    {
+        // Non-destructive: keep Settings row; ignore unknown "opacity" on load; omit on rewrite.
+        var root = Path.Combine(Path.GetTempPath(), "TaskPaneTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var dbPath = Path.Combine(root, AppPaths.DatabaseFileName);
+
+        try
+        {
+            await using var services = Build(dbPath);
+            await services.GetRequiredService<SqliteMigrator>().MigrateAsync();
+            var repo = services.GetRequiredService<Core.Interfaces.ISettingsRepository>();
+
+            await repo.SetRawAsync(
+                SqliteSettingsRepository.OverlayPlacementKey,
+                """{"left":99,"top":88,"width":360,"height":480,"maxHeight":720,"opacity":0.55,"topmost":true,"positionLocked":false}""");
+
+            var placement = await services.GetRequiredService<OverlaySettingsService>().GetAsync();
+            Assert.Equal(99, placement.Left);
+            Assert.Equal(88, placement.Top);
+            Assert.True(placement.Topmost);
+
+            await services.GetRequiredService<OverlaySettingsService>().SaveAsync(placement);
+            var raw = await repo.GetRawAsync(SqliteSettingsRepository.OverlayPlacementKey);
+            Assert.NotNull(raw);
+            Assert.DoesNotContain("opacity", raw!, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("\"left\":99", raw!, StringComparison.Ordinal);
+            Assert.Contains("\"topmost\":true", raw!, StringComparison.Ordinal);
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* ignore */ }
         }
     }
 
