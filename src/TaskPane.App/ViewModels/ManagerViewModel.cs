@@ -76,6 +76,9 @@ public partial class ManagerViewModel : ObservableObject
     public ObservableCollection<HistoryRowViewModel> HistoryRows { get; } = [];
     public ObservableCollection<TaskRowViewModel> DependencyCandidates { get; } = [];
 
+    /// <summary>Predecessor picker for the selected task (excludes self).</summary>
+    public ObservableCollection<TaskRowViewModel> PredecessorChoices { get; } = [];
+
     public IReadOnlyList<ManagerNavItem> NavItems { get; } =
     [
         new(ManagerNavSection.Inbox, "Inbox", SymbolRegular.MailInbox24),
@@ -389,16 +392,54 @@ public partial class ManagerViewModel : ObservableObject
 
     private async Task LoadCatalogAsync(CancellationToken cancellationToken)
     {
+        var previousFilterId = FilterProject?.Id;
+        var previousEditId = EditProject?.Id;
         Projects.Clear();
         foreach (var project in await _organization.ListProjectsAsync(cancellationToken: cancellationToken).ConfigureAwait(true))
         {
             Projects.Add(project);
         }
 
+        // Rebind after Clear() so ComboBox SelectedItem still resolves by id.
+        var wasSuppressing = _suppressQueryRefresh;
+        _suppressQueryRefresh = true;
+        try
+        {
+            FilterProject = previousFilterId is { } fid
+                ? Projects.FirstOrDefault(p => p.Id.Equals(fid))
+                : null;
+            EditProject = previousEditId is { } eid
+                ? Projects.FirstOrDefault(p => p.Id.Equals(eid))
+                : null;
+        }
+        finally
+        {
+            _suppressQueryRefresh = wasSuppressing;
+        }
+
         Tags.Clear();
         foreach (var tag in await _organization.ListTagsAsync(cancellationToken).ConfigureAwait(true))
         {
             Tags.Add(tag);
+        }
+    }
+
+    private string? ResolveProjectName(ProjectId? projectId)
+        => projectId is { } id
+            ? Projects.FirstOrDefault(p => p.Id.Equals(id))?.Name
+            : null;
+
+    private void RebuildPredecessorChoices()
+    {
+        PredecessorChoices.Clear();
+        foreach (var candidate in DependencyCandidates)
+        {
+            if (SelectedTask is not null && candidate.Id.Equals(SelectedTask.Id))
+            {
+                continue;
+            }
+
+            PredecessorChoices.Add(candidate);
         }
     }
 
@@ -456,7 +497,12 @@ public partial class ManagerViewModel : ObservableObject
         {
             var progress = await _taskService.GetProgressAsync(root.Id, cancellationToken).ConfigureAwait(true);
             var tagNames = await ResolveTagNamesAsync(root.Id, cancellationToken).ConfigureAwait(true);
-            var row = new TaskRowViewModel(root, progress, isExpanded: true, tagNames: tagNames);
+            var row = new TaskRowViewModel(
+                root,
+                progress,
+                isExpanded: true,
+                tagNames: tagNames,
+                projectName: ResolveProjectName(root.ProjectId));
             await ApplyTimeAsync(row, active, cancellationToken).ConfigureAwait(true);
             ApplyBlocked(row, blockedMap);
             Tasks.Add(row);
@@ -465,13 +511,18 @@ public partial class ManagerViewModel : ObservableObject
             foreach (var child in children)
             {
                 var childTags = await ResolveTagNamesAsync(child.Id, cancellationToken).ConfigureAwait(true);
-                var childRow = new TaskRowViewModel(child, tagNames: childTags);
+                var childRow = new TaskRowViewModel(
+                    child,
+                    tagNames: childTags,
+                    projectName: ResolveProjectName(child.ProjectId));
                 await ApplyTimeAsync(childRow, active, cancellationToken).ConfigureAwait(true);
                 ApplyBlocked(childRow, blockedMap);
                 Tasks.Add(childRow);
                 DependencyCandidates.Add(childRow);
             }
         }
+
+        RebuildPredecessorChoices();
     }
 
     private static void ApplyBlocked(
@@ -821,10 +872,23 @@ public partial class ManagerViewModel : ObservableObject
         RecurrenceAnchorDateValue ??= DateTime.Today;
         ReminderDueLocal = DateTime.Now.AddHours(1).ToString("yyyy-MM-dd HH:mm");
         RefreshRecurrenceUiState();
+        RebuildPredecessorChoices();
         _ = LoadSelectedTagsAsync(value.Id);
         _ = LoadSessionsAsync(value.Id);
         _ = LoadDependenciesAsync(value.Id);
         _ = LoadRecurrenceAndRemindersAsync(value.Id);
+    }
+
+    [RelayCommand]
+    private void ClearEditProject()
+    {
+        EditProject = null;
+    }
+
+    [RelayCommand]
+    private void ClearFilterProject()
+    {
+        FilterProject = null;
     }
 
     private async Task LoadRecurrenceAndRemindersAsync(TaskId taskId)

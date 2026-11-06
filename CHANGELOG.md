@@ -2,6 +2,12 @@
 
 All notable TaskPane releases are recorded here.
 
+## 0.7.5 — Assign project and block from task UI
+
+- Overlay task overflow: Project submenu (assign / clear) and Depends on… predecessor picker.
+- Manager: clearer project assign + clear (Save applies); project filter clear; predecessor picker excludes self.
+- Project name shown in task meta when assigned. DigiFokus via `AppDisplayName` only.
+
 ## 0.7.4 — Overlay lists all non-slept tasks
 
 - Compact overlay no longer filters by Inbox/Today/Next/Someday; it shows every awake (non-slept) task. Focus buckets remain manager-only.

@@ -127,13 +127,22 @@
                           Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                           Margin="0,0,8,0"
                           AutomationProperties.Name="Search title and notes" />
-              <ComboBox Grid.Column="1"
-                        ItemsSource="{Binding Projects}"
-                        SelectedItem="{Binding FilterProject}"
-                        DisplayMemberPath="Name"
-                        Margin="0,0,8,0"
-                        IsEditable="False"
-                        ToolTip="Filter by project" />
+              <DockPanel Grid.Column="1" Margin="0,0,8,0">
+                <ui:Button DockPanel.Dock="Right"
+                           Content="×"
+                           Appearance="Transparent"
+                           Padding="6,2"
+                           Margin="4,0,0,0"
+                           ToolTip="Clear project filter"
+                           Command="{Binding ClearFilterProjectCommand}"
+                           AutomationProperties.Name="Clear project filter" />
+                <ComboBox ItemsSource="{Binding Projects}"
+                          SelectedItem="{Binding FilterProject}"
+                          DisplayMemberPath="Name"
+                          IsEditable="False"
+                          ToolTip="Filter list by project (does not assign)"
+                          AutomationProperties.Name="Filter by project" />
+              </DockPanel>
               <ComboBox Grid.Column="2"
                         ItemsSource="{Binding Tags}"
                         SelectedItem="{Binding FilterTag}"
@@ -459,11 +468,22 @@
                   <ui:TextBox Text="{Binding EditWaitingFor, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8" />
                   <TextBlock Style="{StaticResource TpFieldLabel}" Text="Waiting follow-up (UTC, optional)" />
                   <ui:TextBox Text="{Binding EditWaitingFollowUp, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12" />
-                  <TextBlock Style="{StaticResource TpFieldLabel}" Text="Project" />
-                  <ComboBox ItemsSource="{Binding Projects}"
-                            SelectedItem="{Binding EditProject}"
-                            DisplayMemberPath="Name"
-                            Margin="0,0,0,12" />
+                  <TextBlock Style="{StaticResource TpFieldLabel}" Text="Project (Save to assign)" />
+                  <DockPanel Margin="0,0,0,12">
+                    <ui:Button DockPanel.Dock="Right"
+                               Content="Clear"
+                               Appearance="Transparent"
+                               Padding="8,4"
+                               Margin="8,0,0,0"
+                               Command="{Binding ClearEditProjectCommand}"
+                               ToolTip="Clear project assignment"
+                               AutomationProperties.Name="Clear project assignment" />
+                    <ComboBox ItemsSource="{Binding Projects}"
+                              SelectedItem="{Binding EditProject}"
+                              DisplayMemberPath="Name"
+                              ToolTip="Choose a project, then Save"
+                              AutomationProperties.Name="Assign project" />
+                  </DockPanel>
                   <TextBlock Style="{StaticResource TpFieldLabel}" Text="Tags (comma-separated)" />
                   <ui:TextBox Text="{Binding EditTagsCsv, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,16" />
 
@@ -625,9 +645,10 @@
                                Appearance="Secondary"
                                Command="{Binding AddDependencyCommand}"
                                AutomationProperties.Name="Add required dependency" />
-                    <ComboBox ItemsSource="{Binding DependencyCandidates}"
+                    <ComboBox ItemsSource="{Binding PredecessorChoices}"
                               SelectedItem="{Binding SelectedPredecessor}"
                               DisplayMemberPath="Title"
+                              ToolTip="Task that must finish first (blocks the selected task)"
                               AutomationProperties.Name="Predecessor task" />
                   </DockPanel>
 

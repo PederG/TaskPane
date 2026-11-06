@@ -15,11 +15,12 @@ public partial class TaskRowViewModel : ObservableObject
         SubtaskProgress? progress = null,
         bool isExpanded = false,
         DateTimeOffset? utcNow = null,
-        IReadOnlyList<string>? tagNames = null)
+        IReadOnlyList<string>? tagNames = null,
+        string? projectName = null)
     {
         Id = task.Id;
         ParentTaskId = task.ParentTaskId;
-        Apply(task, progress, isExpanded, utcNow, tagNames);
+        Apply(task, progress, isExpanded, utcNow, tagNames, projectName);
     }
 
     public TaskId Id { get; }
@@ -119,6 +120,8 @@ public partial class TaskRowViewModel : ObservableObject
 
     public ProjectId? ProjectId { get; private set; }
 
+    public string ProjectName { get; private set; } = string.Empty;
+
     public string? OccurrenceKey { get; private set; }
 
     public bool IsRecurring { get; private set; }
@@ -132,7 +135,8 @@ public partial class TaskRowViewModel : ObservableObject
         SubtaskProgress? progress = null,
         bool? isExpanded = null,
         DateTimeOffset? utcNow = null,
-        IReadOnlyList<string>? tagNames = null)
+        IReadOnlyList<string>? tagNames = null,
+        string? projectName = null)
     {
         var now = utcNow ?? DateTimeOffset.UtcNow;
         Title = task.Title;
@@ -150,6 +154,7 @@ public partial class TaskRowViewModel : ObservableObject
         WaitingFor = task.WaitingFor;
         WaitingFollowUpUtc = task.WaitingFollowUpUtc;
         ProjectId = task.ProjectId;
+        ProjectName = projectName?.Trim() ?? string.Empty;
         OccurrenceKey = task.OccurrenceKey;
         IsRecurring = task.IsRecurringOccurrence;
         SleepUntilUtc = task.SleepUntilUtc;
@@ -239,6 +244,11 @@ public partial class TaskRowViewModel : ObservableObject
         if (IsRecurring)
         {
             parts.Add(string.IsNullOrWhiteSpace(OccurrenceKey) ? "Recurring" : $"Recurring · {OccurrenceKey}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(ProjectName))
+        {
+            parts.Add(ProjectName);
         }
 
         if (!string.IsNullOrWhiteSpace(TagsText))
