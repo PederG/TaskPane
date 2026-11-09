@@ -5,34 +5,34 @@ namespace TaskPane.Core.Tests;
 public sealed class OverlaySessionChromeTests
 {
     [Theory]
-    [InlineData(false, false, false)]
-    [InlineData(false, true, false)]
-    [InlineData(true, true, false)]
-    [InlineData(true, false, true)]
-    public void ShouldShowMini_matches_active_session_and_focus(
-        bool hasActiveSession,
-        bool isOverlayFocused,
-        bool expectedMini)
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void ShouldShowMini_follows_focus_only(bool isOverlayFocused, bool expectedMini)
     {
-        Assert.Equal(
-            expectedMini,
-            OverlaySessionChrome.ShouldShowMini(hasActiveSession, isOverlayFocused));
+        Assert.Equal(expectedMini, OverlaySessionChrome.ShouldShowMini(isOverlayFocused));
     }
 
     [Fact]
-    public void Stopping_timer_while_unfocused_expands_to_full_chrome()
+    public void Idle_unfocused_overlay_stays_in_mini_strip()
+    {
+        // No active timer, unfocused → still mini (brand + expand; not full chrome).
+        Assert.True(OverlaySessionChrome.ShouldShowMini(isOverlayFocused: false));
+    }
+
+    [Fact]
+    public void Stopping_timer_while_unfocused_keeps_mini_strip()
     {
         // Active + unfocused → mini
-        Assert.True(OverlaySessionChrome.ShouldShowMini(hasActiveSession: true, isOverlayFocused: false));
-        // Timer stopped, still unfocused → full (not stay mini)
-        Assert.False(OverlaySessionChrome.ShouldShowMini(hasActiveSession: false, isOverlayFocused: false));
+        Assert.True(OverlaySessionChrome.ShouldShowMini(isOverlayFocused: false));
+        // Timer stopped, still unfocused → remain mini (idle brand strip)
+        Assert.True(OverlaySessionChrome.ShouldShowMini(isOverlayFocused: false));
     }
 
     [Fact]
-    public void Focus_while_timer_running_expands_to_full_chrome()
+    public void Focus_expands_to_full_chrome_whether_or_not_timer_runs()
     {
-        Assert.True(OverlaySessionChrome.ShouldShowMini(hasActiveSession: true, isOverlayFocused: false));
-        Assert.False(OverlaySessionChrome.ShouldShowMini(hasActiveSession: true, isOverlayFocused: true));
+        Assert.True(OverlaySessionChrome.ShouldShowMini(isOverlayFocused: false));
+        Assert.False(OverlaySessionChrome.ShouldShowMini(isOverlayFocused: true));
     }
 
     [Fact]
