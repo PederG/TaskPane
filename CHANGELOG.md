@@ -2,6 +2,12 @@
 
 All notable TaskPane releases are recorded here.
 
+## 0.7.7 — Idle mini-strip overlay
+
+- Overlay collapses to the always-on-top mini strip whenever it loses focus — active timer no longer required.
+- Idle strip shows `AppDisplayName` / brand wordmark plus an expand control (no fake elapsed/pause). Active strip still shows title + elapsed + pause.
+- Focus / strip click / expand restores full chrome. DigiFokus via `AppDisplayName` only.
+
 ## 0.7.6 — Reports charts
 
 - Manager Reports pane shows Fluent horizontal bar charts for today and this week (share of tracked time per task), plus totals and detail lines.

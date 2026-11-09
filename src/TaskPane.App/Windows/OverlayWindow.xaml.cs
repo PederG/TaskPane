@@ -467,8 +467,8 @@ public partial class OverlayWindow : Window
 
     /// <summary>
     /// True when the point is over Search / Expand / More inside <see cref="DragHeader"/>,
-    /// or over the mini-strip pause button. Those must stay HTCLIENT so HTCAPTION never
-    /// steals their clicks.
+    /// or over a mini-strip action button (pause / expand). Those must stay HTCLIENT so
+    /// HTCAPTION never steals their clicks.
     /// </summary>
     private bool IsOverHeaderActionChrome(WpfPoint local)
     {
@@ -495,7 +495,8 @@ public partial class OverlayWindow : Window
                 button = found;
             }
 
-            if (ReferenceEquals(current, MiniPauseButton))
+            if (ReferenceEquals(current, MiniPauseButton)
+                || ReferenceEquals(current, MiniExpandButton))
             {
                 return true;
             }
@@ -566,9 +567,9 @@ public partial class OverlayWindow : Window
 
     private void MiniSessionStrip_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        // Pause must keep working; anything else expands full chrome (and may drag).
+        // Pause / expand buttons keep their own commands; anything else expands + may drag.
         if (e.OriginalSource is DependencyObject source
-            && IsInsideMiniPauseButton(source))
+            && IsInsideMiniActionButton(source))
         {
             return;
         }
@@ -589,11 +590,12 @@ public partial class OverlayWindow : Window
         }
     }
 
-    private bool IsInsideMiniPauseButton(DependencyObject source)
+    private bool IsInsideMiniActionButton(DependencyObject source)
     {
         for (var current = source; current is not null; current = VisualTreeHelper.GetParent(current))
         {
-            if (ReferenceEquals(current, MiniPauseButton))
+            if (ReferenceEquals(current, MiniPauseButton)
+                || ReferenceEquals(current, MiniExpandButton))
             {
                 return true;
             }

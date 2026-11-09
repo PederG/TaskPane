@@ -147,8 +147,9 @@ public partial class OverlayViewModel : ObservableObject
     private bool _isOverlayFocused = true;
 
     /// <summary>
-    /// Mini always-on-top strip (title + elapsed + pause) while a timer runs and the overlay
-    /// is not focused. Not tray minimize — window stays visible and Topmost.
+    /// Mini always-on-top strip while the overlay is not focused. Active sessions show
+    /// title + elapsed + pause; idle shows brand + expand. Not tray minimize — window
+    /// stays visible and Topmost.
     /// </summary>
     [ObservableProperty]
     private bool _isMiniSessionChrome;
@@ -156,7 +157,7 @@ public partial class OverlayViewModel : ObservableObject
     /// <summary>List viewport ceiling so SizeToContent can measure without unbounded growth.</summary>
     public double TaskListMaxHeight => Math.Max(120, MaxContentHeight - 280);
 
-    /// <summary>Window MinHeight for the current chrome mode (full vs running-session mini).</summary>
+    /// <summary>Window MinHeight for the current chrome mode (full vs mini strip).</summary>
     public double OverlayMinHeight => OverlaySessionChrome.MinHeightDip(IsMiniSessionChrome);
 
     public event Action? OpenManagerRequested;
@@ -345,7 +346,7 @@ public partial class OverlayViewModel : ObservableObject
         UpdateSessionChromeMode();
     }
 
-    /// <summary>Overlay Deactivated / LostFocus — collapse to mini while a timer runs.</summary>
+    /// <summary>Overlay Deactivated / LostFocus — collapse to the mini strip.</summary>
     public void NotifyOverlayDeactivated()
     {
         IsOverlayFocused = false;
@@ -362,7 +363,7 @@ public partial class OverlayViewModel : ObservableObject
 
     private void UpdateSessionChromeMode()
     {
-        IsMiniSessionChrome = OverlaySessionChrome.ShouldShowMini(HasActiveTask, IsOverlayFocused);
+        IsMiniSessionChrome = OverlaySessionChrome.ShouldShowMini(IsOverlayFocused);
     }
 
     partial void OnIsMiniSessionChromeChanged(bool value)
@@ -373,7 +374,7 @@ public partial class OverlayViewModel : ObservableObject
             return;
         }
 
-        // Mini strip is title + elapsed + pause only — fold secondary panels.
+        // Mini strip is compact chrome only — fold secondary panels.
         if (NotePopoverOpen)
         {
             CloseNotes();

@@ -42,10 +42,10 @@
     ≈ TpOverlayPad (14 DIP) is HTCAPTION for empty padding drag (not over Search/Expand/More;
     respects position-locked). Corner hit squares (16 DIP) win over 6 DIP edge strips so
     HTBOTTOMRIGHT stays reachable on the rounded silhouette. DragHeader still DragMove.
-    Running-session mini chrome: while a timer is active and the overlay is not focused,
-    FullChrome collapses and MiniSessionStrip shows (title + elapsed + pause). Activate /
-    GotFocus / strip click expands back. Stop with no focus expands (not tray minimize).
-    SetWindowRgn reapplied on IsMiniSessionChrome size changes.
+    Mini chrome: while the overlay is not focused, FullChrome collapses and
+    MiniSessionStrip shows. Active timer → title + elapsed + pause; idle → DisplayName +
+    expand. Activate / GotFocus / strip click (or expand control) restores full chrome.
+    Not tray minimize. SetWindowRgn reapplied on IsMiniSessionChrome size changes.
   -->
   <Window.Template>
     <ControlTemplate TargetType="Window">
@@ -67,12 +67,12 @@
           SnapsToDevicePixels="True"
           SizeChanged="RootSurface_OnSizeChanged">
     <Grid>
-    <!-- Mini strip while timer runs and overlay is unfocused (always-on-top, not tray). -->
+    <!-- Mini strip while overlay is unfocused (always-on-top, not tray). -->
     <Border x:Name="MiniSessionStrip"
             Background="Transparent"
             Visibility="{Binding IsMiniSessionChrome, Converter={StaticResource BoolToVis}}"
             MouseLeftButtonDown="MiniSessionStrip_OnMouseLeftButtonDown"
-            AutomationProperties.Name="Active session mini overlay">
+            AutomationProperties.Name="Mini overlay">
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
@@ -84,7 +84,11 @@
                        Foreground="{StaticResource TpOverlayMetaBrush}"
                        Margin="0,0,8,0"
                        VerticalAlignment="Center" />
-        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0">
+        <!-- Active session: task title + elapsed (no fake timer when idle). -->
+        <StackPanel Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Margin="0,0,8,0"
+                    Visibility="{Binding HasActiveTask, Converter={StaticResource BoolToVis}}">
           <TextBlock Text="{Binding ActiveTaskTitle}"
                      Style="{StaticResource TpOverlayActiveTitle}"
                      TextTrimming="CharacterEllipsis"
@@ -94,6 +98,15 @@
                      Foreground="{StaticResource TpOverlayMutedBrush}"
                      TextTrimming="CharacterEllipsis" />
         </StackPanel>
+        <!-- Idle: app brand / DisplayName only. -->
+        <TextBlock Grid.Column="1"
+                   Text="{Binding DisplayName}"
+                   Style="{StaticResource TpOverlayActiveTitle}"
+                   VerticalAlignment="Center"
+                   Margin="0,0,8,0"
+                   TextTrimming="CharacterEllipsis"
+                   ToolTip="Click to expand overlay"
+                   Visibility="{Binding HasActiveTask, Converter={StaticResource InverseBoolToVis}}" />
         <Button x:Name="MiniPauseButton"
                 Grid.Column="2"
                 Style="{StaticResource TpOverlayIconButton}"
@@ -102,8 +115,23 @@
                 VerticalAlignment="Center"
                 Command="{Binding PauseActiveCommand}"
                 ToolTip="Pause timer"
-                AutomationProperties.Name="Pause active timer">
+                AutomationProperties.Name="Pause active timer"
+                Visibility="{Binding HasActiveTask, Converter={StaticResource BoolToVis}}">
           <ui:SymbolIcon Symbol="Pause24"
+                         FontSize="14"
+                         Foreground="{StaticResource TpOverlayTextBrush}" />
+        </Button>
+        <Button x:Name="MiniExpandButton"
+                Grid.Column="2"
+                Style="{StaticResource TpOverlayIconButton}"
+                Width="36"
+                Height="36"
+                VerticalAlignment="Center"
+                Command="{Binding ExpandSessionChromeCommand}"
+                ToolTip="Expand overlay"
+                AutomationProperties.Name="Expand overlay"
+                Visibility="{Binding HasActiveTask, Converter={StaticResource InverseBoolToVis}}">
+          <ui:SymbolIcon Symbol="ChevronUp24"
                          FontSize="14"
                          Foreground="{StaticResource TpOverlayTextBrush}" />
         </Button>
