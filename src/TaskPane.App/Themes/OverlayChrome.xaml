@@ -125,6 +125,57 @@
     <Setter Property="Padding" Value="6,2" />
   </Style>
 
+  <!-- Compact text actions (Cancel/Save, Edit/Close): light label + subtle slate chip -->
+  <Style x:Key="TpOverlayActionButton" TargetType="Button" BasedOn="{StaticResource TpOverlayGhostButton}">
+    <Setter Property="Foreground" Value="{StaticResource TpOverlayTextBrush}" />
+    <Setter Property="Background" Value="{StaticResource TpOverlayIconHoverBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource TpOverlayBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Padding" Value="10,5" />
+  </Style>
+
+  <!-- Notes editor: override default TextBox chrome so light text stays on dark slate -->
+  <Style x:Key="TpOverlayTextBox" TargetType="TextBox">
+    <Setter Property="Background" Value="{StaticResource TpOverlayCardBrush}" />
+    <Setter Property="Foreground" Value="{StaticResource TpOverlayTextBrush}" />
+    <Setter Property="CaretBrush" Value="{StaticResource TpOverlayTextBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource TpOverlayBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Padding" Value="8,6" />
+    <Setter Property="SelectionBrush" Value="{StaticResource TpOverlayFocusRingBrush}" />
+    <Setter Property="SelectionTextBrush" Value="{StaticResource TpOverlayTextBrush}" />
+    <Setter Property="FocusVisualStyle" Value="{StaticResource TpOverlayFocusVisual}" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="OverridesDefaultStyle" Value="True" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TextBox">
+          <Border x:Name="Bd"
+                  Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="{StaticResource TpOverlayControlRadius}"
+                  SnapsToDevicePixels="True">
+            <ScrollViewer x:Name="PART_ContentHost"
+                          Margin="{TemplateBinding Padding}"
+                          Background="Transparent"
+                          Focusable="False"
+                          HorizontalScrollBarVisibility="Hidden"
+                          VerticalScrollBarVisibility="{TemplateBinding VerticalScrollBarVisibility}" />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource TpOverlayFocusRingBrush}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.45" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- Completion: hollow circle / filled check; soft blue hover -->
   <Style x:Key="TpOverlayCompleteButton" TargetType="Button" BasedOn="{StaticResource TpOverlayIconButton}">
     <Setter Property="Width" Value="22" />
