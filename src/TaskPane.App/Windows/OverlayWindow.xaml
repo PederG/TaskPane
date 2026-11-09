@@ -404,54 +404,45 @@
                        VerticalAlignment="Center" />
           </DockPanel>
 
-          <!-- Compact preview (not editing) -->
-          <DockPanel Visibility="{Binding IsNoteEditing, Converter={StaticResource InverseBoolToVis}}">
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
-              <Button Style="{StaticResource TpOverlayGhostButton}"
-                      Content="Edit"
-                      Padding="8,4"
-                      Margin="0,0,4,0"
-                      Command="{Binding BeginEditNotesCommand}"
-                      AutomationProperties.Name="Edit task notes" />
-              <Button Style="{StaticResource TpOverlayGhostButton}"
-                      Content="Close"
-                      Padding="8,4"
-                      Command="{Binding CloseNotesCommand}"
-                      AutomationProperties.Name="Close notes" />
-            </StackPanel>
+          <!-- Compact preview (not editing): notes body first, Edit/Close under it -->
+          <StackPanel Visibility="{Binding IsNoteEditing, Converter={StaticResource InverseBoolToVis}}">
             <TextBlock Text="{Binding NoteCompactBody}"
                        Foreground="{StaticResource TpOverlayMutedBrush}"
                        TextWrapping="Wrap"
-                       Margin="0,0,8,0" />
-          </DockPanel>
+                       Margin="0,0,0,8" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+              <Button Style="{StaticResource TpOverlayActionButton}"
+                      Content="Edit"
+                      Margin="0,0,4,0"
+                      Command="{Binding BeginEditNotesCommand}"
+                      AutomationProperties.Name="Edit task notes" />
+              <Button Style="{StaticResource TpOverlayActionButton}"
+                      Content="Close"
+                      Command="{Binding CloseNotesCommand}"
+                      AutomationProperties.Name="Close notes" />
+            </StackPanel>
+          </StackPanel>
 
           <!-- Expanded Markdown/plain-text editor -->
           <StackPanel Visibility="{Binding IsNoteEditing, Converter={StaticResource BoolToVis}}">
-            <TextBox Text="{Binding NoteDraftText, UpdateSourceTrigger=PropertyChanged}"
+            <TextBox Style="{StaticResource TpOverlayTextBox}"
+                     Text="{Binding NoteDraftText, UpdateSourceTrigger=PropertyChanged}"
                      AcceptsReturn="True"
                      TextWrapping="Wrap"
                      MinHeight="88"
                      MaxHeight="180"
                      VerticalScrollBarVisibility="Auto"
-                     Background="{StaticResource TpOverlayCardBrush}"
-                     BorderBrush="{StaticResource TpOverlayBorderBrush}"
-                     BorderThickness="1"
-                     CaretBrush="{StaticResource TpOverlayTextBrush}"
-                     Foreground="{StaticResource TpOverlayTextBrush}"
-                     Padding="8,6"
                      AutomationProperties.Name="Task notes editor" />
             <StackPanel Orientation="Horizontal"
                         HorizontalAlignment="Right"
                         Margin="0,8,0,0">
-              <Button Style="{StaticResource TpOverlayGhostButton}"
+              <Button Style="{StaticResource TpOverlayActionButton}"
                       Content="Cancel"
-                      Padding="8,4"
                       Margin="0,0,4,0"
                       Command="{Binding CancelNotesEditCommand}"
                       AutomationProperties.Name="Cancel notes edit" />
-              <Button Style="{StaticResource TpOverlayGhostButton}"
+              <Button Style="{StaticResource TpOverlayActionButton}"
                       Content="Save"
-                      Padding="8,4"
                       Command="{Binding SaveNotesCommand}"
                       AutomationProperties.Name="Save task notes" />
             </StackPanel>
