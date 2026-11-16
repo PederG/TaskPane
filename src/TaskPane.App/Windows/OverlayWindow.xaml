@@ -45,7 +45,9 @@
     Mini chrome: while the overlay is not focused, FullChrome collapses and
     MiniSessionStrip shows. Active timer → title + elapsed + pause; idle → DisplayName +
     expand. Activate / GotFocus / strip click (or expand control) restores full chrome.
-    Not tray minimize. SetWindowRgn reapplied on IsMiniSessionChrome size changes.
+    Not tray minimize. Collapse snaps HWND Height to MiniMinHeightDip (SizeToContent is
+    Manual after user resize); expand restores the remembered full height. SetWindowRgn
+    reapplied on IsMiniSessionChrome size changes.
   -->
   <Window.Template>
     <ControlTemplate TargetType="Window">
