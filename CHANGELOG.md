@@ -2,6 +2,11 @@
 
 All notable TaskPane releases are recorded here.
 
+## 0.7.8 — Mini-strip height snap after resize
+
+- Collapsing to the mini strip snaps window Height (and `SizeToContent` / round-region) to the strip height even after the user resized the overlay taller — no leftover tall empty chrome.
+- Expanding restores the previous full-chrome height. Dark slate overlay chrome unchanged. DigiFokus via `AppDisplayName` only.
+
 ## 0.7.7 — Idle mini-strip overlay
 
 - Overlay collapses to the always-on-top mini strip whenever it loses focus — active timer no longer required.

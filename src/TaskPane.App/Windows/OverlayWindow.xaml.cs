@@ -37,9 +37,12 @@ public partial class OverlayWindow : Window
     private readonly OverlayViewModel _viewModel;
     private readonly ILogger<OverlayWindow> _logger;
     private readonly DispatcherTimer _elapsedTimer;
+    private readonly OverlayChromeHeightMemory _chromeHeight = new();
     private CancellationTokenSource? _placementSaveCts;
     private bool _suppressPlacementSave;
     private bool _nativeRegionUpdateScheduled;
+    private bool _applyingChromeHeight;
+    private SizeToContent _expandedSizeToContent = SizeToContent.Height;
     private RoundWindowRegionParams? _appliedNativeRegion;
     private IntPtr _hookedHwnd;
 
@@ -66,13 +69,13 @@ public partial class OverlayWindow : Window
 
         _viewModel.PropertyChanged += (_, e) =>
         {
-            // Mini ↔ full chrome changes RootSurface size; refresh SetWindowRgn clip.
+            // Mini ↔ full chrome: snap HWND height (SizeToContent is Manual after resize)
+            // then refresh SetWindowRgn to the new silhouette.
             if (e.PropertyName is nameof(OverlayViewModel.IsMiniSessionChrome)
                 or nameof(OverlayViewModel.OverlayMinHeight)
                 or null)
             {
-                MinHeight = _viewModel.OverlayMinHeight;
-                ScheduleNativeRoundedRegionUpdate();
+                ApplyChromeHeightForMode(_viewModel.IsMiniSessionChrome);
             }
         };
 
@@ -527,11 +530,11 @@ public partial class OverlayWindow : Window
     public OverlayPlacement CapturePlacement()
     {
         // Do not persist the mini-strip height as the restored full-chrome height.
-        var height = ActualHeight > 0 ? ActualHeight : Height;
-        if (_viewModel.IsMiniSessionChrome)
-        {
-            height = Math.Max(_viewModel.Placement.Height, OverlaySessionChrome.FullMinHeightDip);
-        }
+        var current = ActualHeight > 0 ? ActualHeight : Height;
+        var height = _chromeHeight.HeightForPersistence(
+            _viewModel.IsMiniSessionChrome,
+            current,
+            _viewModel.Placement.Height);
 
         return new OverlayPlacement
         {
@@ -544,6 +547,68 @@ public partial class OverlayWindow : Window
             PositionLocked = _viewModel.Placement.PositionLocked,
             MonitorDeviceName = GetMonitorName()
         };
+    }
+
+    /// <summary>
+    /// Snap window Height to the mini strip on collapse (even after user resize disabled
+    /// <see cref="SizeToContent"/>), and restore the prior expanded height on expand.
+    /// </summary>
+    private void ApplyChromeHeightForMode(bool isMini)
+    {
+        if (_applyingChromeHeight)
+        {
+            return;
+        }
+
+        _applyingChromeHeight = true;
+        _suppressPlacementSave = true;
+        try
+        {
+            MinHeight = _viewModel.OverlayMinHeight;
+
+            if (isMini)
+            {
+                // Capture SizeToContent before we force Height — user resize sets Manual.
+                _expandedSizeToContent = SizeToContent;
+                var current = ActualHeight > 0 ? ActualHeight : Height;
+                var miniHeight = _chromeHeight.OnCollapse(current);
+                if (_chromeHeight.RememberedExpandedHeight >= OverlaySessionChrome.FullMinHeightDip)
+                {
+                    _viewModel.Placement.Height = _chromeHeight.RememberedExpandedHeight;
+                }
+
+                // Re-enable height-to-content and clear any explicit Height left by resize,
+                // then pin to the mini strip so the HWND cannot stay tall and empty.
+                SizeToContent = SizeToContent.Height;
+                ClearValue(HeightProperty);
+                Height = miniHeight;
+            }
+            else
+            {
+                var restore = _chromeHeight.OnExpand(_viewModel.Placement.Height);
+                _viewModel.Placement.Height = restore;
+
+                if (_expandedSizeToContent == SizeToContent.Manual)
+                {
+                    // User had resized: restore that exact HWND height.
+                    SizeToContent = SizeToContent.Manual;
+                    Height = restore;
+                }
+                else
+                {
+                    // Still content-driven before collapse — let layout measure full chrome.
+                    SizeToContent = SizeToContent.Height;
+                    ClearValue(HeightProperty);
+                }
+            }
+
+            ScheduleNativeRoundedRegionUpdate();
+        }
+        finally
+        {
+            _suppressPlacementSave = false;
+            _applyingChromeHeight = false;
+        }
     }
 
     public void ApplyPlacement(OverlayPlacement placement)
