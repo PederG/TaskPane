@@ -4,6 +4,8 @@
 
   <!-- Compact overlay palette (charcoal / slate) matching approved mockup -->
   <Color x:Key="TpOverlayBgColor">#E61A1C23</Color>
+  <!-- Idle mini strip: clear crimson so collapsed+no-timer reads as "start work"; white text/icons stay readable. -->
+  <Color x:Key="TpOverlayIdleMiniBgColor">#E6B91C28</Color>
   <Color x:Key="TpOverlayCardColor">#CC252830</Color>
   <Color x:Key="TpOverlayActiveCardColor">#CC1E2A3A</Color>
   <Color x:Key="TpOverlayElevatedColor">#FF2A2D36</Color>
@@ -23,6 +25,7 @@
   <Color x:Key="TpOverlayFocusRingColor">#998EB7E0</Color>
 
   <SolidColorBrush x:Key="TpOverlayBgBrush" Color="{StaticResource TpOverlayBgColor}" />
+  <SolidColorBrush x:Key="TpOverlayIdleMiniBgBrush" Color="{StaticResource TpOverlayIdleMiniBgColor}" />
   <SolidColorBrush x:Key="TpOverlayCardBrush" Color="{StaticResource TpOverlayCardColor}" />
   <SolidColorBrush x:Key="TpOverlayActiveCardBrush" Color="{StaticResource TpOverlayActiveCardColor}" />
   <SolidColorBrush x:Key="TpOverlayElevatedBrush" Color="{StaticResource TpOverlayElevatedColor}" />

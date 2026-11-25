@@ -154,6 +154,13 @@ public partial class OverlayViewModel : ObservableObject
     [ObservableProperty]
     private bool _isMiniSessionChrome;
 
+    /// <summary>
+    /// True when the mini strip is idle (no running timer). Drives the red RootSurface
+    /// accent so collapsed idle is visually distinct from mini-with-timer / expanded.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isIdleMiniAccent;
+
     /// <summary>List viewport ceiling so SizeToContent can measure without unbounded growth.</summary>
     public double TaskListMaxHeight => Math.Max(120, MaxContentHeight - 280);
 
@@ -364,11 +371,22 @@ public partial class OverlayViewModel : ObservableObject
     private void UpdateSessionChromeMode()
     {
         IsMiniSessionChrome = OverlaySessionChrome.ShouldShowMini(IsOverlayFocused);
+        IsIdleMiniAccent = OverlaySessionChrome.ShouldUseIdleMiniAccent(
+            IsMiniSessionChrome,
+            HasActiveTask);
+    }
+
+    partial void OnHasActiveTaskChanged(bool value)
+    {
+        IsIdleMiniAccent = OverlaySessionChrome.ShouldUseIdleMiniAccent(
+            IsMiniSessionChrome,
+            value);
     }
 
     partial void OnIsMiniSessionChromeChanged(bool value)
     {
         OnPropertyChanged(nameof(OverlayMinHeight));
+        IsIdleMiniAccent = OverlaySessionChrome.ShouldUseIdleMiniAccent(value, HasActiveTask);
         if (!value)
         {
             return;

@@ -19,6 +19,13 @@ public static class OverlaySessionChrome
     public static bool ShouldShowMini(bool isOverlayFocused)
         => !isOverlayFocused;
 
+    /// <summary>
+    /// Idle mini strip uses a red RootSurface accent so "no timer" is obvious when collapsed.
+    /// Expanded chrome and mini-with-timer keep the default dark slate.
+    /// </summary>
+    public static bool ShouldUseIdleMiniAccent(bool isMini, bool hasActiveSession)
+        => isMini && !hasActiveSession;
+
     /// <summary>MinHeight for the current chrome mode.</summary>
     public static double MinHeightDip(bool isMini)
         => isMini ? MiniMinHeightDip : FullMinHeightDip;

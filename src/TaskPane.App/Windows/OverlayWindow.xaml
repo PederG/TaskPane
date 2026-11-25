@@ -44,10 +44,11 @@
     HTBOTTOMRIGHT stays reachable on the rounded silhouette. DragHeader still DragMove.
     Mini chrome: while the overlay is not focused, FullChrome collapses and
     MiniSessionStrip shows. Active timer → title + elapsed + pause; idle → DisplayName +
-    expand. Activate / GotFocus / strip click (or expand control) restores full chrome.
-    Not tray minimize. Collapse snaps HWND Height to MiniMinHeightDip (SizeToContent is
-    Manual after user resize); expand restores the remembered full height. SetWindowRgn
-    reapplied on IsMiniSessionChrome size changes.
+    expand on a red RootSurface accent (white text/icons). Expand / active mini restore
+    default dark slate. Activate / GotFocus / strip click (or expand control) restores
+    full chrome. Not tray minimize. Collapse snaps HWND Height to MiniMinHeightDip
+    (SizeToContent is Manual after user resize); expand restores the remembered full
+    height. SetWindowRgn reapplied on IsMiniSessionChrome size changes.
   -->
   <Window.Template>
     <ControlTemplate TargetType="Window">
@@ -59,15 +60,24 @@
     </ControlTemplate>
   </Window.Template>
 
-  <!-- Solid overlay chrome (theme brushes at full design alpha). -->
+  <!-- Solid overlay chrome (theme brushes at full design alpha). Idle mini → red accent. -->
   <Border x:Name="RootSurface"
-          Background="{StaticResource TpOverlayBgBrush}"
           BorderBrush="{StaticResource TpOverlayBorderBrush}"
           BorderThickness="1"
           CornerRadius="{StaticResource TpOverlayWindowRadius}"
           Padding="{StaticResource TpOverlayPadThickness}"
           SnapsToDevicePixels="True"
           SizeChanged="RootSurface_OnSizeChanged">
+    <Border.Style>
+      <Style TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource TpOverlayBgBrush}" />
+        <Style.Triggers>
+          <DataTrigger Binding="{Binding IsIdleMiniAccent}" Value="True">
+            <Setter Property="Background" Value="{StaticResource TpOverlayIdleMiniBgBrush}" />
+          </DataTrigger>
+        </Style.Triggers>
+      </Style>
+    </Border.Style>
     <Grid>
     <!-- Mini strip while overlay is unfocused (always-on-top, not tray). -->
     <Border x:Name="MiniSessionStrip"
@@ -83,9 +93,19 @@
         </Grid.ColumnDefinitions>
         <ui:SymbolIcon Symbol="ReOrderDotsVertical24"
                        FontSize="14"
-                       Foreground="{StaticResource TpOverlayMetaBrush}"
                        Margin="0,0,8,0"
-                       VerticalAlignment="Center" />
+                       VerticalAlignment="Center">
+          <ui:SymbolIcon.Style>
+            <Style TargetType="ui:SymbolIcon">
+              <Setter Property="Foreground" Value="{StaticResource TpOverlayMetaBrush}" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsIdleMiniAccent}" Value="True">
+                  <Setter Property="Foreground" Value="{StaticResource TpOverlayTextBrush}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </ui:SymbolIcon.Style>
+        </ui:SymbolIcon>
         <!-- Active session: task title + elapsed (no fake timer when idle). -->
         <StackPanel Grid.Column="1"
                     VerticalAlignment="Center"
