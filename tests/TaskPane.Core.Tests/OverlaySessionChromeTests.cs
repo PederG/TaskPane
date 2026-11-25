@@ -42,4 +42,19 @@ public sealed class OverlaySessionChromeTests
         Assert.Equal(OverlaySessionChrome.MiniMinHeightDip, OverlaySessionChrome.MinHeightDip(isMini: true));
         Assert.True(OverlaySessionChrome.MiniMinHeightDip < OverlaySessionChrome.FullMinHeightDip);
     }
+
+    [Theory]
+    [InlineData(true, false, true)]   // collapsed + idle → red accent
+    [InlineData(true, true, false)]   // collapsed + timer → keep slate
+    [InlineData(false, false, false)] // expanded idle → slate
+    [InlineData(false, true, false)]  // expanded + timer → slate
+    public void ShouldUseIdleMiniAccent_only_when_collapsed_without_timer(
+        bool isMini,
+        bool hasActiveSession,
+        bool expectedAccent)
+    {
+        Assert.Equal(
+            expectedAccent,
+            OverlaySessionChrome.ShouldUseIdleMiniAccent(isMini, hasActiveSession));
+    }
 }

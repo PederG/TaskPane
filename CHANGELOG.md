@@ -2,6 +2,12 @@
 
 All notable TaskPane releases are recorded here.
 
+## 0.7.9 — Idle mini-strip red accent
+
+- Collapsed overlay with no running timer uses a clear red RootSurface background so idle is obvious; white text/icons stay readable.
+- Expanding restores the default dark slate chrome. Collapsed with a timer running keeps the normal (non-red) slate.
+- DigiFokus via `AppDisplayName` only.
+
 ## 0.7.8 — Mini-strip height snap after resize
 
 - Collapsing to the mini strip snaps window Height (and `SizeToContent` / round-region) to the strip height even after the user resized the overlay taller — no leftover tall empty chrome.
